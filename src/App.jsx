@@ -1,4 +1,10 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+// src/App.jsx
+import React, {
+  useState,
+  useEffect,
+  useMemo,
+} from 'react';
+
 import {
   LineChart,
   Line,
@@ -16,6 +22,7 @@ import {
   Cell,
   Scatter,
 } from 'recharts';
+
 import {
   Search,
   TrendingUp,
@@ -29,52 +36,73 @@ import {
   ArrowLeft,
   ChevronDown,
   Zap,
-  ShieldAlert,
   TrendingDown,
   Calculator,
   Target,
   Gem,
   Banknote,
-  Wifi,
   Heart,
   RefreshCw,
   AlertTriangle,
   Database,
-  List,
   Sliders,
   BarChart2,
-  DollarSign,
   X,
   CheckCircle2,
-  Coins
+  Coins,
 } from 'lucide-react';
+
 import { initializeApp } from 'firebase/app';
-import { getAuth, signInWithCustomToken, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
-import { getFirestore, doc, setDoc, onSnapshot } from 'firebase/firestore';
+import {
+  getAuth,
+  signInWithCustomToken,
+  signInAnonymously,
+  onAuthStateChanged,
+} from 'firebase/auth';
+import {
+  getFirestore,
+  doc,
+  setDoc,
+  onSnapshot,
+} from 'firebase/firestore';
 
 // =========================
 // 基本設定
 // =========================
 
 const INITIAL_WATCH_LIST_IDS = [
-  '2330', '2454', '2317', '2603', '2881', '2882', '2412', '2308', '2303', '1101', '0050', '0056'
+  '2330',
+  '2454',
+  '2317',
+  '2603',
+  '2881',
+  '2882',
+  '2412',
+  '2308',
+  '2303',
+  '1101',
+  '0050',
+  '0056',
 ];
 
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const formatDate = (date) => date.toISOString().split('T')[0];
 
 // =========================
-/* Firebase 初始化設定 */
+// Firebase 初始化設定
 // =========================
-const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {
-  // 如果您在本地開發，請在此填入您的 Firebase Config
-  apiKey: "AIzaSyDK3-cqlescL-IsjJhvsgvfBWsGAwb7JiM",
-  authDomain: "rootmaster-d7548.firebaseapp.com",
-  projectId: "rootmaster-d7548",
-  storageBucket: "rootmaster-d7548.firebasestorage.app",
-  messagingSenderId: "536194643036",
-  appId: "1:536194643036:web:3fadd43098faff72452299",
-};
+
+const firebaseConfig =
+  typeof __firebase_config !== 'undefined'
+    ? JSON.parse(__firebase_config)
+    : {
+        apiKey: 'AIzaSyDK3-cqlescL-IsjJhvsgvfBWsGAwb7JiM',
+        authDomain: 'rootmaster-d7548.firebaseapp.com',
+        projectId: 'rootmaster-d7548',
+        storageBucket: 'rootmaster-d7548.firebasestorage.app',
+        messagingSenderId: '536194643036',
+        appId: '1:536194643036:web:3fadd43098faff72452299',
+      };
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
@@ -101,13 +129,16 @@ const calculateBB = (data, period = 20, multiplier = 2) =>
   data.map((item, index, arr) => {
     if (index < period - 1)
       return { ...item, bbUpper: null, bbMiddle: null, bbLower: null };
+
     const slice = arr.slice(index - period + 1, index + 1);
-    const sum = slice.reduce((acc, curr) => acc + curr.close, 0);
-    const mean = sum / period;
-    const squaredDiffs = slice.map((x) => Math.pow(x.close - mean, 2));
+    const mean =
+      slice.reduce((acc, curr) => acc + curr.close, 0) / period;
+
+    const squaredDiffs = slice.map((x) => (x.close - mean) ** 2);
     const variance =
       squaredDiffs.reduce((acc, curr) => acc + curr, 0) / period;
     const stdDev = Math.sqrt(variance);
+
     return {
       ...item,
       bbMiddle: Number(mean.toFixed(2)),
@@ -119,39 +150,50 @@ const calculateBB = (data, period = 20, multiplier = 2) =>
 const calculateKD = (data, period = 9) => {
   let k = 50;
   let d = 50;
+
   return data.map((item, index) => {
     if (index < period - 1) return { ...item, k: 50, d: 50 };
-    const window = data.slice(index - period + 1, index + 1);
-    const lowest = Math.min(...window.map((w) => w.low));
-    const highest = Math.max(...window.map((w) => w.high));
+
+    const windowArr = data.slice(index - period + 1, index + 1);
+    const lowest = Math.min(...windowArr.map((w) => w.low));
+    const highest = Math.max(...windowArr.map((w) => w.high));
+
     let rsv = 50;
     if (highest !== lowest) {
       rsv = ((item.close - lowest) / (highest - lowest)) * 100;
     }
+
     k = (2 / 3) * k + (1 / 3) * rsv;
     d = (2 / 3) * d + (1 / 3) * k;
+
     return { ...item, k: Number(k.toFixed(2)), d: Number(d.toFixed(2)) };
   });
 };
 
 const calculateMACD = (data) => {
   if (!data || data.length === 0) return [];
+
   const getEMA = (val, prevEMA, days) => {
     const alpha = 2 / (days + 1);
     return val * alpha + prevEMA * (1 - alpha);
   };
+
   let ema12 = data[0].close;
   let ema26 = data[0].close;
+
   const withDIF = data.map((item) => {
     ema12 = getEMA(item.close, ema12, 12);
     ema26 = getEMA(item.close, ema26, 26);
     const dif = ema12 - ema26;
     return { ...item, dif };
   });
+
   let signal = withDIF[0].dif;
+
   return withDIF.map((item) => {
     signal = getEMA(item.dif, signal, 9);
     const osc = item.dif - signal;
+
     return {
       ...item,
       dif: Number(item.dif.toFixed(2)),
@@ -163,14 +205,17 @@ const calculateMACD = (data) => {
 
 const calculateRSIArray = (data, period = 14) => {
   if (!data || data.length === 0) return [];
+
   let gains = 0;
   let losses = 0;
   const rsiArray = [];
+
   for (let i = 0; i < data.length; i++) {
     if (i === 0) {
       rsiArray.push(50);
       continue;
     }
+
     const change = data[i].close - data[i - 1].close;
     const gain = change > 0 ? change : 0;
     const loss = change < 0 ? Math.abs(change) : 0;
@@ -178,11 +223,14 @@ const calculateRSIArray = (data, period = 14) => {
     if (i <= period) {
       gains += gain;
       losses += loss;
+
       if (i === period) {
         const avgGain = gains / period;
         const avgLoss = losses / period;
         const rs = avgLoss === 0 ? 100 : avgGain / avgLoss;
-        rsiArray.push(avgLoss === 0 ? 100 : 100 - 100 / (1 + rs));
+        rsiArray.push(
+          avgLoss === 0 ? 100 : 100 - 100 / (1 + rs),
+        );
       } else {
         rsiArray.push(50);
       }
@@ -191,14 +239,17 @@ const calculateRSIArray = (data, period = 14) => {
       let sumLoss = 0;
       for (let j = 0; j < period; j++) {
         if (i - j <= 0) break;
-        const chg = data[i - j].close - data[i - j - 1].close;
+        const chg =
+          data[i - j].close - data[i - j - 1].close;
         if (chg > 0) sumGain += chg;
         else sumLoss += Math.abs(chg);
       }
       const avgGain = sumGain / period;
       const avgLoss = sumLoss / period;
       const rs = avgLoss === 0 ? 100 : avgGain / avgLoss;
-      rsiArray.push(avgLoss === 0 ? 100 : 100 - 100 / (1 + rs));
+      rsiArray.push(
+        avgLoss === 0 ? 100 : 100 - 100 / (1 + rs),
+      );
     }
   }
   return rsiArray;
@@ -217,6 +268,7 @@ const runBacktest = (history, strategyType) => {
     buySignal: null,
     sellSignal: null,
   }));
+
   let capital = 100000;
   let position = 0;
   let entryPrice = 0;
@@ -227,27 +279,40 @@ const runBacktest = (history, strategyType) => {
   for (let i = 20; i < simulatedHistory.length; i++) {
     const today = simulatedHistory[i];
     const prev = simulatedHistory[i - 1];
+
     let signalBuy = false;
     let signalSell = false;
 
     if (strategyType === 'long') {
-      signalBuy = today.ma5 > today.ma20 && prev.k < prev.d && today.k > today.d;
-      signalSell = prev.k > prev.d && today.k < today.d;
+      signalBuy =
+        today.ma5 > today.ma20 &&
+        prev.k < prev.d &&
+        today.k > today.d;
+      signalSell =
+        prev.k > prev.d && today.k < today.d;
     } else if (strategyType === 'short') {
-      signalBuy = today.ma5 < today.ma20 && prev.k > prev.d && today.k < today.d;
-      signalSell = prev.k < prev.d && today.k > today.d;
+      signalBuy =
+        today.ma5 < today.ma20 &&
+        prev.k > prev.d &&
+        today.k < today.d;
+      signalSell =
+        prev.k < prev.d && today.k > today.d;
     } else if (strategyType === 'value') {
-      signalBuy = (today.rsi || 50) < 30 && (prev.rsi || 50) >= 30;
-      signalSell = (today.rsi || 50) > 70 && (prev.rsi || 50) <= 70;
+      signalBuy =
+        (today.rsi || 50) < 30 && (prev.rsi || 50) >= 30;
+      signalSell =
+        (today.rsi || 50) > 70 && (prev.rsi || 50) <= 70;
     }
 
     if (strategyType === 'short') {
       if (position === 0 && signalBuy) {
+        // 建立空單 (示意)
         entryPrice = today.close;
         position = 1;
         today.sellSignal = today.high * 1.04;
       } else if (position === 1 && signalSell) {
-        const profitPct = (entryPrice - today.close) / entryPrice;
+        const profitPct =
+          (entryPrice - today.close) / entryPrice;
         const profit = 100000 * profitPct;
         totalProfit += profit;
         if (profit > 0) wins++;
@@ -262,7 +327,8 @@ const runBacktest = (history, strategyType) => {
         capital -= position * today.close;
         today.buySignal = today.low * 0.96;
       } else if (position > 0 && signalSell) {
-        const profit = (today.close - entryPrice) * position;
+        const profit =
+          (today.close - entryPrice) * position;
         capital += position * today.close;
         totalProfit += profit;
         if (profit > 0) wins++;
@@ -273,20 +339,27 @@ const runBacktest = (history, strategyType) => {
     }
   }
 
+  // 平倉
   if (position > 0) {
-    const lastPrice = simulatedHistory[simulatedHistory.length - 1].close;
+    const lastPrice =
+      simulatedHistory[simulatedHistory.length - 1].close;
     if (strategyType === 'short') {
-      const profit = 100000 * ((entryPrice - lastPrice) / entryPrice);
+      const profit =
+        100000 * ((entryPrice - lastPrice) / entryPrice);
       totalProfit += profit;
     } else {
-      const profit = (lastPrice - entryPrice) * position;
+      const profit =
+        (lastPrice - entryPrice) * position;
       totalProfit += profit;
     }
   }
 
   return {
-    roi: (totalProfit / 100000 * 100).toFixed(1),
-    winRate: tradeCount > 0 ? ((wins / tradeCount) * 100).toFixed(0) : 0,
+    roi: ((totalProfit / 100000) * 100).toFixed(1),
+    winRate:
+      tradeCount > 0
+        ? ((wins / tradeCount) * 100).toFixed(0)
+        : 0,
     count: tradeCount,
     history: simulatedHistory,
   };
@@ -297,22 +370,30 @@ const runBacktest = (history, strategyType) => {
 // =========================
 
 const fetchWithFallback = async (url) => {
-  // 1. Direct
+  // 1. 直接呼叫
   try {
     const res = await fetch(url);
     if (res.ok) return await res.json();
-  } catch (e) { /* ignore */ }
+  } catch (e) {
+    // ignore
+  }
 
   // 2. corsproxy.io
   try {
-    const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(url)}`;
+    const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(
+      url,
+    )}`;
     const res = await fetch(proxyUrl);
     if (res.ok) return await res.json();
-  } catch (e) { /* ignore */ }
+  } catch (e) {
+    // ignore
+  }
 
   // 3. allorigins.win
   try {
-    const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`;
+    const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(
+      url,
+    )}`;
     const res = await fetch(proxyUrl);
     if (res.ok) {
       const data = await res.json();
@@ -320,24 +401,22 @@ const fetchWithFallback = async (url) => {
         return JSON.parse(data.contents);
       }
     }
-  } catch (e) { /* ignore */ }
+  } catch (e) {
+    // ignore
+  }
 
-  throw new Error("Network Error: Unable to fetch data from any source. Please check connection.");
+  throw new Error(
+    'Network Error: Unable to fetch data from any source.',
+  );
 };
 
-// 從自己的 API 取得全市場資料（Vercel Serverless Function）
+// 從自己的 API 取得全市場資料
 const fetchTWSEMarketData = async () => {
-  const origin =
-    typeof window !== 'undefined' ? window.location.origin : '';
-
-  const res = await fetch(`${origin}/api/twse-market`);
-
+  const res = await fetch('/api/twse-market');
   if (!res.ok) {
     throw new Error('TWSE API route error');
   }
-
-  const data = await res.json();
-  return data;
+  return res.json();
 };
 
 const fetchFinMind = async (dataset, stockId, startDate) => {
@@ -345,11 +424,12 @@ const fetchFinMind = async (dataset, stockId, startDate) => {
   const url = `https://api.finmindtrade.com/api/v4/data?dataset=${dataset}&data_id=${stockId}&start_date=${startDate}&end_date=${formatDate(
     today,
   )}`;
+
   const maxRetries = 3;
 
   for (let i = 0; i < maxRetries; i++) {
     try {
-      if (i > 0) await delay(1000 * Math.pow(2, i));
+      if (i > 0) await delay(1000 * 2 ** i);
       const json = await fetchWithFallback(url);
       return json.data || [];
     } catch (err) {
@@ -368,12 +448,18 @@ const processStockData = (
   baseInfo,
   priceData = [],
   chipData = [],
-  revData = [],
   fullHistory = false,
 ) => {
   let history = [];
-  let ma5 = 0, ma20 = 0, ma60 = 0, rsi = 50, k = 50, d = 50, osc = 0;
+  let ma5 = 0;
+  let ma20 = 0;
+  let ma60 = 0;
+  let rsi = 50;
+  let k = 50;
+  let d = 50;
+  let osc = 0;
 
+  // 價格資料
   if (priceData && priceData.length > 0) {
     const cleanData = priceData.map((d) => {
       const isUp = d.close >= d.open;
@@ -385,8 +471,13 @@ const processStockData = (
         high: d.max,
         low: d.min,
         price: d.close,
-        volume: Math.round((d.Trading_Volume || 0) / 1000),
-        candleBody: [Math.min(d.open, d.close), Math.max(d.open, d.close)],
+        volume: Math.round(
+          (d.Trading_Volume || 0) / 1000,
+        ),
+        candleBody: [
+          Math.min(d.open, d.close),
+          Math.max(d.open, d.close),
+        ],
         candleWick: [d.min, d.max],
         color: isUp ? '#f87171' : '#34d399',
         isUp,
@@ -406,8 +497,8 @@ const processStockData = (
     });
 
     history = processed;
-    const last = history[history.length - 1];
 
+    const last = history[history.length - 1];
     ma5 = last.ma5;
     ma20 = last.ma20;
     ma60 = last.ma60;
@@ -417,40 +508,62 @@ const processStockData = (
     rsi = last.rsi;
   }
 
+  // 法人籌碼
   const processedChips = [];
   if (chipData && chipData.length > 0) {
     const chipMap = {};
     chipData.forEach((item) => {
-      if (!chipMap[item.date])
-        chipMap[item.date] = { foreign: 0, trust: 0, dealer: 0 };
+      if (!chipMap[item.date]) {
+        chipMap[item.date] = {
+          foreign: 0,
+          trust: 0,
+          dealer: 0,
+        };
+      }
       const netShares = item.buy - item.sell;
       const netLots = Math.round(netShares / 1000);
-      if (item.name === 'Foreign_Investor') chipMap[item.date].foreign += netLots;
+
+      if (item.name === 'Foreign_Investor')
+        chipMap[item.date].foreign += netLots;
       else if (item.name === 'Investment_Trust')
         chipMap[item.date].trust += netLots;
-      else if (item.name === 'Dealer') chipMap[item.date].dealer += netLots;
+      else if (item.name === 'Dealer')
+        chipMap[item.date].dealer += netLots;
     });
+
     Object.keys(chipMap)
       .sort()
       .forEach((date) => {
-        const match = history.find((h) => h.fullDate === date);
+        const match = history.find(
+          (h) => h.fullDate === date,
+        );
         if (match) {
           match.foreign = chipMap[date].foreign;
           match.trust = chipMap[date].trust;
           match.dealer = chipMap[date].dealer;
         }
-        processedChips.push({ day: date.slice(5), ...chipMap[date] });
+        processedChips.push({
+          day: date.slice(5),
+          ...chipMap[date],
+        });
       });
   }
 
-  // Use FinMind data if available, otherwise fallback to TWSE snapshot for today
-  const foreignBuy = chipData.length > 0
-    ? processedChips.slice(-5).reduce((acc, curr) => acc + curr.foreign, 0)
-    : baseInfo.foreignNet;
-  const trustBuy = chipData.length > 0
-    ? processedChips.slice(-5).reduce((acc, curr) => acc + curr.trust, 0)
-    : baseInfo.trustNet;
+  // 最近 5 日外資 / 投信，若沒有 FinMind 則用 TWSE 當天 snapshot
+  const foreignBuy =
+    chipData.length > 0
+      ? processedChips
+          .slice(-5)
+          .reduce((acc, curr) => acc + curr.foreign, 0)
+      : baseInfo.foreignNet;
+  const trustBuy =
+    chipData.length > 0
+      ? processedChips
+          .slice(-5)
+          .reduce((acc, curr) => acc + curr.trust, 0)
+      : baseInfo.trustNet;
 
+  // 簡單 AI 評分
   let score = 60;
   if (baseInfo.pe > 0 && baseInfo.pe < 15) score += 15;
   if (baseInfo.yield > 4) score += 10;
@@ -463,7 +576,7 @@ const processStockData = (
 
   return {
     ...baseInfo,
-    sector: '上市公司',
+    sector: baseInfo.sector || '上市公司',
     ma5,
     ma20,
     ma60,
@@ -484,19 +597,28 @@ const processStockData = (
 
 const fetchDetailedHistory = async (stock, marketCacheStock) => {
   const today = new Date();
-  const date5YearsAgo = new Date(new Date().setDate(today.getDate() - 1825));
+  const date5YearsAgo = new Date(
+    today.getTime() - 1825 * 24 * 60 * 60 * 1000,
+  );
   const startDateStr = formatDate(date5YearsAgo);
 
   const [priceData, chipData] = await Promise.all([
-    fetchFinMind('TaiwanStockPrice', stock.id, startDateStr),
-    fetchFinMind('TaiwanStockInstitutionalInvestorsBuySell', stock.id, startDateStr)
+    fetchFinMind(
+      'TaiwanStockPrice',
+      stock.id,
+      startDateStr,
+    ),
+    fetchFinMind(
+      'TaiwanStockInstitutionalInvestorsBuySell',
+      stock.id,
+      startDateStr,
+    ),
   ]);
 
   return processStockData(
     marketCacheStock,
     priceData,
     chipData,
-    [],
     true,
   );
 };
@@ -508,9 +630,25 @@ const fetchDetailedHistory = async (stock, marketCacheStock) => {
 const BuyMarker = ({ cx, cy }) => {
   if (!cx || !cy) return null;
   return (
-    <svg x={cx - 12} y={cy - 12} width={24} height={24} viewBox="0 0 24 24">
-      <circle cx="12" cy="12" r="11" fill="#8b5cf6" stroke="#1e293b" strokeWidth="2" />
-      <path d="M12 6l-5 5h3v7h4v-7h3z" fill="white" />
+    <svg
+      x={cx - 12}
+      y={cy - 12}
+      width={24}
+      height={24}
+      viewBox="0 0 24 24"
+    >
+      <circle
+        cx="12"
+        cy="12"
+        r="11"
+        fill="#8b5cf6"
+        stroke="#1e293b"
+        strokeWidth="2"
+      />
+      <path
+        d="M12 6l-5 5h3v7h4v-7h3z"
+        fill="white"
+      />
     </svg>
   );
 };
@@ -518,180 +656,238 @@ const BuyMarker = ({ cx, cy }) => {
 const SellMarker = ({ cx, cy }) => {
   if (!cx || !cy) return null;
   return (
-    <svg x={cx - 12} y={cy - 12} width={24} height={24} viewBox="0 0 24 24">
-      <circle cx="12" cy="12" r="11" fill="#3b82f6" stroke="#1e293b" strokeWidth="2" />
-      <path d="M12 18l-5-5h3v-7h4v7h3z" fill="white" />
+    <svg
+      x={cx - 12}
+      y={cy - 12}
+      width={24}
+      height={24}
+      viewBox="0 0 24 24"
+    >
+      <circle
+        cx="12"
+        cy="12"
+        r="11"
+        fill="#3b82f6"
+        stroke="#1e293b"
+        strokeWidth="2"
+      />
+      <path
+        d="M12 18l-5-5h3v-7h4v7h3z"
+        fill="white"
+      />
     </svg>
   );
 };
 
 const CustomKLineTooltip = ({ active, payload }) => {
-  if (active && payload && payload.length) {
-    const data = payload[0].payload;
-    return (
-      <div className="bg-neutral-800 p-3 border border-neutral-700 rounded-lg shadow-lg text-xs z-50 text-neutral-200">
-        <p className="font-bold text-white mb-1">
-          {data.day} ({data.fullDate})
-        </p>
-        {data.buySignal && (
-          <div className="flex items-center gap-1 text-purple-300 font-bold mb-1 bg-purple-900/30 p-1.5 rounded justify-center">
-            <div className="w-3 h-3 rounded-full bg-purple-500" />
-            <span>策略買進訊號</span>
-          </div>
-        )}
-        {data.sellSignal && (
-          <div className="flex items-center gap-1 text-blue-300 font-bold mb-1 bg-blue-900/30 p-1.5 rounded justify-center">
-            <div className="w-3 h-3 rounded-full bg-blue-500" />
-            <span>策略賣出訊號</span>
-          </div>
-        )}
-        <div className="grid grid-cols-2 gap-x-4 gap-y-1 mt-1">
-          <div className="flex justify-between gap-2">
-            <span className="text-neutral-400">開:</span>
-            <span className={data.close > data.open ? 'text-red-400' : 'text-emerald-400'}>
-              {data.open}
-            </span>
-          </div>
-          <div className="flex justify-between gap-2">
-            <span className="text-neutral-400">高:</span>
-            <span className="text-red-400">{data.high}</span>
-          </div>
-          <div className="flex justify-between gap-2">
-            <span className="text-neutral-400">低:</span>
-            <span className="text-emerald-400">{data.low}</span>
-          </div>
-          <div className="flex justify-between gap-2">
-            <span className="text-neutral-400">收:</span>
-            <span
-              className={`font-bold ${
-                data.close > data.open ? 'text-red-400' : 'text-emerald-400'
-              }`}
-            >
-              {data.close}
-            </span>
-          </div>
-          <div className="col-span-2 flex justify-between text-neutral-500 mt-2 pt-2 border-t border-neutral-700">
-            <span>MA5: {data.ma5}</span>
-            <span>RSI: {data.rsi}</span>
-          </div>
-        </div>
-      </div>
-    );
-  }
-  return null;
-};
+  if (!active || !payload || !payload.length)
+    return null;
 
-const StockCard = ({ stock, onClick, isSelected, favorites, toggleFavorite, strategy }) => {
+  const data = payload[0].payload;
+
   return (
-    <div
-      onClick={() => onClick(stock)}
-      className={`p-5 mb-4 rounded-2xl border cursor-pointer transition-all duration-300 hover:-translate-y-1 hover:shadow-xl relative overflow-hidden group ${
-        isSelected
-          ? 'border-amber-500 bg-neutral-800 shadow-lg shadow-amber-500/10'
-          : 'border-neutral-800 bg-neutral-900 hover:border-neutral-700'
-      }`}
-    >
-      <button
-        onClick={(e) => {
-          e.stopPropagation();
-          toggleFavorite(stock.id);
-        }}
-        className={`absolute top-4 right-4 z-10 transition-colors ${
-          favorites.includes(stock.id)
-            ? 'text-red-500 fill-current'
-            : 'text-neutral-600 hover:text-red-400'
-        }`}
-      >
-        <Heart size={20} />
-      </button>
-
-      {strategy === 'long' && (
-        <div className="absolute top-0 left-0 bg-red-600 text-white text-[10px] px-2 py-0.5 rounded-br-lg font-bold z-0">
-          多頭潛力
+    <div className="bg-neutral-800 p-3 border border-neutral-700 rounded-lg shadow-lg text-xs z-50 text-neutral-200">
+      <p className="font-bold text-white mb-1">
+        {data.day} ({data.fullDate})
+      </p>
+      {data.buySignal && (
+        <div className="flex items-center gap-1 text-purple-300 font-bold mb-1 bg-purple-900/30 p-1.5 rounded justify-center">
+          <div className="w-3 h-3 rounded-full bg-purple-500" />
+          <span>策略買進訊號</span>
         </div>
       )}
-      {strategy === 'short' && (
-        <div className="absolute top-0 left-0 bg-emerald-600 text-white text-[10px] px-2 py-0.5 rounded-br-lg font-bold z-0">
-          空頭警示
+      {data.sellSignal && (
+        <div className="flex items-center gap-1 text-blue-300 font-bold mb-1 bg-blue-900/30 p-1.5 rounded justify-center">
+          <div className="w-3 h-3 rounded-full bg-blue-500" />
+          <span>策略賣出訊號</span>
         </div>
       )}
-      {strategy === 'value' && (
-        <div className="absolute top-0 left-0 bg-purple-600 text-white text-[10px] px-2 py-0.5 rounded-br-lg font-bold z-0">
-          價值存股
-        </div>
-      )}
-
-      <div className="flex justify-between items-start mb-4 mt-2">
-        <div>
-          <div className="flex items-center gap-3 mb-1">
-            <span className="font-bold text-xl text-white tracking-wide">
-              {stock.name}
-            </span>
-            <span className="text-xs font-mono bg-neutral-800 px-2 py-0.5 rounded text-neutral-400 border border-neutral-700">
-              {stock.id}
-            </span>
-          </div>
-          <span className="text-xs text-neutral-500 font-medium">
-            {stock.sector}
+      <div className="grid grid-cols-2 gap-x-4 gap-y-1 mt-1">
+        <div className="flex justify-between gap-2">
+          <span className="text-neutral-400">開:</span>
+          <span
+            className={
+              data.close > data.open
+                ? 'text-red-400'
+                : 'text-emerald-400'
+            }
+          >
+            {data.open}
           </span>
         </div>
-        <div className="text-right mt-1">
-          <div
-            className={`font-bold text-2xl ${
-              stock.change >= 0 ? 'text-red-400' : 'text-emerald-400'
+        <div className="flex justify-between gap-2">
+          <span className="text-neutral-400">高:</span>
+          <span className="text-red-400">
+            {data.high}
+          </span>
+        </div>
+        <div className="flex justify-between gap-2">
+          <span className="text-neutral-400">低:</span>
+          <span className="text-emerald-400">
+            {data.low}
+          </span>
+        </div>
+        <div className="flex justify-between gap-2">
+          <span className="text-neutral-400">收:</span>
+          <span
+            className={`font-bold ${
+              data.close > data.open
+                ? 'text-red-400'
+                : 'text-emerald-400'
             }`}
           >
-            {stock.price}
-          </div>
-          <div
-            className={`text-xs flex items-center justify-end gap-1 mt-1 font-medium ${
-              stock.change >= 0 ? 'text-red-400' : 'text-emerald-400'
-            }`}
-          >
-            {stock.change >= 0 ? (
-              <ArrowUpCircle size={14} />
-            ) : (
-              <ArrowDownCircle size={14} />
-            )}
-            {Math.abs(stock.change)} ({Math.abs(stock.changePercent)}%)
-          </div>
+            {data.close}
+          </span>
         </div>
-      </div>
-
-      <div className="grid grid-cols-3 gap-3">
-        <div className="text-center p-2 bg-neutral-950/50 rounded-lg border border-neutral-800/50 group-hover:border-neutral-700 transition-colors">
-          <div className="text-[10px] text-neutral-500 mb-0.5">外資買賣超</div>
-          <div className={`text-sm font-medium ${stock.foreignNet > 0 ? 'text-red-400' : stock.foreignNet < 0 ? 'text-green-400' : 'text-neutral-300'}`}>
-            {stock.foreignNet} 張
-          </div>
-        </div>
-        <div className="text-center p-2 bg-neutral-950/50 rounded-lg border border-neutral-800/50 group-hover:border-neutral-700 transition-colors">
-          <div className="text-[10px] text-neutral-500 mb-0.5">殖利率</div>
-          <div
-            className={`text-sm font-medium ${
-              stock.yield > 4 ? 'text-amber-400' : 'text-neutral-300'
-            }`}
-          >
-            {stock.yield}%
-          </div>
-        </div>
-        <div className="text-center p-2 bg-neutral-950/50 rounded-lg border border-neutral-800/50 group-hover:border-neutral-700 transition-colors">
-          <div className="text-[10px] text-neutral-500 mb-0.5">本益比</div>
-          <div className="text-sm font-medium text-neutral-300">
-            {stock.pe > 0 ? `${stock.pe}x` : '-'}
-          </div>
+        <div className="col-span-2 flex justify-between text-neutral-500 mt-2 pt-2 border-t border-neutral-700">
+          <span>MA5: {data.ma5}</span>
+          <span>RSI: {data.rsi}</span>
         </div>
       </div>
     </div>
   );
 };
 
-// =========================
-// New Screener Modal Component
-// =========================
+const StockCard = ({
+  stock,
+  onClick,
+  isSelected,
+  favorites,
+  toggleFavorite,
+  strategy,
+}) => (
+  <div
+    onClick={() => onClick(stock)}
+    className={`p-5 mb-4 rounded-2xl border cursor-pointer transition-all duration-300 hover:-translate-y-1 hover:shadow-xl relative overflow-hidden group ${
+      isSelected
+        ? 'border-amber-500 bg-neutral-800 shadow-lg shadow-amber-500/10'
+        : 'border-neutral-800 bg-neutral-900 hover:border-neutral-700'
+    }`}
+  >
+    <button
+      onClick={(e) => {
+        e.stopPropagation();
+        toggleFavorite(stock.id);
+      }}
+      className={`absolute top-4 right-4 z-10 transition-colors ${
+        favorites.includes(stock.id)
+          ? 'text-red-500 fill-current'
+          : 'text-neutral-600 hover:text-red-400'
+      }`}
+    >
+      <Heart size={20} />
+    </button>
 
-const ScreenerModal = ({ isOpen, onClose, onApply, currentFilters }) => {
-  const [localFilters, setLocalFilters] = useState(currentFilters);
+    {strategy === 'long' && (
+      <div className="absolute top-0 left-0 bg-red-600 text-white text-[10px] px-2 py-0.5 rounded-br-lg font-bold z-0">
+        多頭潛力
+      </div>
+    )}
+    {strategy === 'short' && (
+      <div className="absolute top-0 left-0 bg-emerald-600 text-white text-[10px] px-2 py-0.5 rounded-br-lg font-bold z-0">
+        空頭警示
+      </div>
+    )}
+    {strategy === 'value' && (
+      <div className="absolute top-0 left-0 bg-purple-600 text-white text-[10px] px-2 py-0.5 rounded-br-lg font-bold z-0">
+        價值存股
+      </div>
+    )}
+
+    <div className="flex justify-between items-start mb-4 mt-2">
+      <div>
+        <div className="flex items-center gap-3 mb-1">
+          <span className="font-bold text-xl text-white tracking-wide">
+            {stock.name}
+          </span>
+          <span className="text-xs font-mono bg-neutral-800 px-2 py-0.5 rounded text-neutral-400 border border-neutral-700">
+            {stock.id}
+          </span>
+        </div>
+        <span className="text-xs text-neutral-500 font-medium">
+          {stock.sector}
+        </span>
+      </div>
+      <div className="text-right mt-1">
+        <div
+          className={`font-bold text-2xl ${
+            stock.change >= 0
+              ? 'text-red-400'
+              : 'text-emerald-400'
+          }`}
+        >
+          {stock.price}
+        </div>
+        <div
+          className={`text-xs flex items-center justify-end gap-1 mt-1 font-medium ${
+            stock.change >= 0
+              ? 'text-red-400'
+              : 'text-emerald-400'
+          }`}
+        >
+          {stock.change >= 0 ? (
+            <ArrowUpCircle size={14} />
+          ) : (
+            <ArrowDownCircle size={14} />
+          )}
+          {Math.abs(stock.change)} (
+          {Math.abs(stock.changePercent)}%)
+        </div>
+      </div>
+    </div>
+
+    <div className="grid grid-cols-3 gap-3">
+      <div className="text-center p-2 bg-neutral-950/50 rounded-lg border border-neutral-800/50 group-hover:border-neutral-700 transition-colors">
+        <div className="text-[10px] text-neutral-500 mb-0.5">
+          外資買賣超
+        </div>
+        <div
+          className={`text-sm font-medium ${
+            stock.foreignNet > 0
+              ? 'text-red-400'
+              : stock.foreignNet < 0
+              ? 'text-green-400'
+              : 'text-neutral-300'
+          }`}
+        >
+          {stock.foreignNet} 張
+        </div>
+      </div>
+      <div className="text-center p-2 bg-neutral-950/50 rounded-lg border border-neutral-800/50 group-hover:border-neutral-700 transition-colors">
+        <div className="text-[10px] text-neutral-500 mb-0.5">
+          殖利率
+        </div>
+        <div
+          className={`text-sm font-medium ${
+            stock.yield > 4
+              ? 'text-amber-400'
+              : 'text-neutral-300'
+          }`}
+        >
+          {stock.yield}%
+        </div>
+      </div>
+      <div className="text-center p-2 bg-neutral-950/50 rounded-lg border border-neutral-800/50 group-hover:border-neutral-700 transition-colors">
+        <div className="text-[10px] text-neutral-500 mb-0.5">
+          本益比
+        </div>
+        <div className="text-sm font-medium text-neutral-300">
+          {stock.pe > 0 ? `${stock.pe}x` : '-'}
+        </div>
+      </div>
+    </div>
+  </div>
+);
+
+// 篩選設定 Modal
+const ScreenerModal = ({
+  isOpen,
+  onClose,
+  onApply,
+  currentFilters,
+}) => {
+  const [localFilters, setLocalFilters] =
+    useState(currentFilters);
 
   useEffect(() => {
     if (isOpen) setLocalFilters(currentFilters);
@@ -701,7 +897,7 @@ const ScreenerModal = ({ isOpen, onClose, onApply, currentFilters }) => {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
-      <div className="bg-neutral-900 w-full max-w-md rounded-3xl border border-neutral-800 shadow-2xl flex flex-col max-h-[90vh] animate-in fade-in zoom-in duration-200">
+      <div className="bg-neutral-900 w-full max-w-md rounded-3xl border border-neutral-800 shadow-2xl flex flex-col max-h-[90vh]">
         {/* Header */}
         <div className="p-5 border-b border-neutral-800 flex items-center justify-between sticky top-0 bg-neutral-900 z-10 rounded-t-3xl">
           <div className="flex items-center gap-3">
@@ -709,28 +905,40 @@ const ScreenerModal = ({ isOpen, onClose, onApply, currentFilters }) => {
               <Sliders size={20} />
             </div>
             <div>
-              <h3 className="text-lg font-bold text-white">智慧選股設定</h3>
-              <p className="text-xs text-neutral-500">自訂您的選股策略</p>
+              <h3 className="text-lg font-bold text-white">
+                智慧選股設定
+              </h3>
+              <p className="text-xs text-neutral-500">
+                自訂您的選股策略
+              </p>
             </div>
           </div>
-          <button onClick={onClose} className="p-2 hover:bg-neutral-800 rounded-full text-neutral-400 hover:text-white transition-colors">
+          <button
+            onClick={onClose}
+            className="p-2 hover:bg-neutral-800 rounded-full text-neutral-400 hover:text-white transition-colors"
+          >
             <X size={20} />
           </button>
         </div>
 
         {/* Body */}
         <div className="flex-1 overflow-y-auto p-6 space-y-8 custom-scrollbar">
-          {/* Basic Filters */}
+          {/* 基本面 */}
           <div className="space-y-4">
             <div className="flex items-center gap-2 text-blue-400 font-bold text-sm uppercase tracking-wider border-b border-blue-500/20 pb-2">
               <Filter size={14} /> 基本面指標
             </div>
 
             <div className="space-y-6">
+              {/* PE */}
               <div>
                 <div className="flex justify-between text-sm mb-2">
-                  <span className="text-neutral-400">最高本益比 (PE)</span>
-                  <span className="text-white font-bold bg-neutral-800 px-2 py-0.5 rounded">{localFilters.maxPe}x</span>
+                  <span className="text-neutral-400">
+                    最高本益比 (PE)
+                  </span>
+                  <span className="text-white font-bold bg-neutral-800 px-2 py-0.5 rounded">
+                    {localFilters.maxPe}x
+                  </span>
                 </div>
                 <input
                   type="range"
@@ -738,7 +946,12 @@ const ScreenerModal = ({ isOpen, onClose, onApply, currentFilters }) => {
                   max="100"
                   step="1"
                   value={localFilters.maxPe}
-                  onChange={(e) => setLocalFilters({ ...localFilters, maxPe: Number(e.target.value) })}
+                  onChange={(e) =>
+                    setLocalFilters({
+                      ...localFilters,
+                      maxPe: Number(e.target.value),
+                    })
+                  }
                   className="w-full h-2 bg-neutral-800 rounded-lg appearance-none cursor-pointer accent-blue-500"
                 />
                 <div className="flex justify-between text-[10px] text-neutral-600 mt-1">
@@ -747,10 +960,15 @@ const ScreenerModal = ({ isOpen, onClose, onApply, currentFilters }) => {
                 </div>
               </div>
 
+              {/* Yield */}
               <div>
                 <div className="flex justify-between text-sm mb-2">
-                  <span className="text-neutral-400">最低殖利率 (Yield)</span>
-                  <span className="text-white font-bold bg-neutral-800 px-2 py-0.5 rounded">{localFilters.minYield}%</span>
+                  <span className="text-neutral-400">
+                    最低殖利率 (Yield)
+                  </span>
+                  <span className="text-white font-bold bg-neutral-800 px-2 py-0.5 rounded">
+                    {localFilters.minYield}%
+                  </span>
                 </div>
                 <input
                   type="range"
@@ -758,7 +976,12 @@ const ScreenerModal = ({ isOpen, onClose, onApply, currentFilters }) => {
                   max="15"
                   step="0.5"
                   value={localFilters.minYield}
-                  onChange={(e) => setLocalFilters({ ...localFilters, minYield: Number(e.target.value) })}
+                  onChange={(e) =>
+                    setLocalFilters({
+                      ...localFilters,
+                      minYield: Number(e.target.value),
+                    })
+                  }
                   className="w-full h-2 bg-neutral-800 rounded-lg appearance-none cursor-pointer accent-blue-500"
                 />
                 <div className="flex justify-between text-[10px] text-neutral-600 mt-1">
@@ -767,10 +990,15 @@ const ScreenerModal = ({ isOpen, onClose, onApply, currentFilters }) => {
                 </div>
               </div>
 
+              {/* PB */}
               <div>
                 <div className="flex justify-between text-sm mb-2">
-                  <span className="text-neutral-400">最高股價淨值比 (PB)</span>
-                  <span className="text-white font-bold bg-neutral-800 px-2 py-0.5 rounded">{localFilters.maxPb}x</span>
+                  <span className="text-neutral-400">
+                    最高股價淨值比 (PB)
+                  </span>
+                  <span className="text-white font-bold bg-neutral-800 px-2 py-0.5 rounded">
+                    {localFilters.maxPb}x
+                  </span>
                 </div>
                 <input
                   type="range"
@@ -778,24 +1006,34 @@ const ScreenerModal = ({ isOpen, onClose, onApply, currentFilters }) => {
                   max="10"
                   step="0.1"
                   value={localFilters.maxPb}
-                  onChange={(e) => setLocalFilters({ ...localFilters, maxPb: Number(e.target.value) })}
+                  onChange={(e) =>
+                    setLocalFilters({
+                      ...localFilters,
+                      maxPb: Number(e.target.value),
+                    })
+                  }
                   className="w-full h-2 bg-neutral-800 rounded-lg appearance-none cursor-pointer accent-blue-500"
                 />
               </div>
             </div>
           </div>
 
-          {/* Chip Filters */}
+          {/* 籌碼面 */}
           <div className="space-y-4">
             <div className="flex items-center gap-2 text-purple-400 font-bold text-sm uppercase tracking-wider border-b border-purple-500/20 pb-2">
               <Coins size={14} /> 籌碼面指標
             </div>
 
             <div className="space-y-6">
+              {/* 外資 */}
               <div>
                 <div className="flex justify-between text-sm mb-2">
-                  <span className="text-neutral-400">外資最少買超 (張)</span>
-                  <span className="text-white font-bold bg-neutral-800 px-2 py-0.5 rounded">{localFilters.minForeign}</span>
+                  <span className="text-neutral-400">
+                    外資最少買超 (張)
+                  </span>
+                  <span className="text-white font-bold bg-neutral-800 px-2 py-0.5 rounded">
+                    {localFilters.minForeign}
+                  </span>
                 </div>
                 <input
                   type="range"
@@ -803,7 +1041,12 @@ const ScreenerModal = ({ isOpen, onClose, onApply, currentFilters }) => {
                   max="5000"
                   step="100"
                   value={localFilters.minForeign}
-                  onChange={(e) => setLocalFilters({ ...localFilters, minForeign: Number(e.target.value) })}
+                  onChange={(e) =>
+                    setLocalFilters({
+                      ...localFilters,
+                      minForeign: Number(e.target.value),
+                    })
+                  }
                   className="w-full h-2 bg-neutral-800 rounded-lg appearance-none cursor-pointer accent-purple-500"
                 />
                 <div className="flex justify-between text-[10px] text-neutral-600 mt-1">
@@ -812,10 +1055,15 @@ const ScreenerModal = ({ isOpen, onClose, onApply, currentFilters }) => {
                 </div>
               </div>
 
+              {/* 投信 */}
               <div>
                 <div className="flex justify-between text-sm mb-2">
-                  <span className="text-neutral-400">投信最少買超 (張)</span>
-                  <span className="text-white font-bold bg-neutral-800 px-2 py-0.5 rounded">{localFilters.minTrust}</span>
+                  <span className="text-neutral-400">
+                    投信最少買超 (張)
+                  </span>
+                  <span className="text-white font-bold bg-neutral-800 px-2 py-0.5 rounded">
+                    {localFilters.minTrust}
+                  </span>
                 </div>
                 <input
                   type="range"
@@ -823,24 +1071,34 @@ const ScreenerModal = ({ isOpen, onClose, onApply, currentFilters }) => {
                   max="2000"
                   step="50"
                   value={localFilters.minTrust}
-                  onChange={(e) => setLocalFilters({ ...localFilters, minTrust: Number(e.target.value) })}
+                  onChange={(e) =>
+                    setLocalFilters({
+                      ...localFilters,
+                      minTrust: Number(e.target.value),
+                    })
+                  }
                   className="w-full h-2 bg-neutral-800 rounded-lg appearance-none cursor-pointer accent-purple-500"
                 />
               </div>
             </div>
           </div>
 
-          {/* Tech Filters */}
+          {/* 技術面 */}
           <div className="space-y-4">
             <div className="flex items-center gap-2 text-amber-400 font-bold text-sm uppercase tracking-wider border-b border-amber-500/20 pb-2">
               <BarChart2 size={14} /> 技術面
             </div>
 
             <div className="space-y-6">
+              {/* 量 */}
               <div>
                 <div className="flex justify-between text-sm mb-2">
-                  <span className="text-neutral-400">最低成交量 (張)</span>
-                  <span className="text-white font-bold bg-neutral-800 px-2 py-0.5 rounded">{localFilters.minVol}</span>
+                  <span className="text-neutral-400">
+                    最低成交量 (張)
+                  </span>
+                  <span className="text-white font-bold bg-neutral-800 px-2 py-0.5 rounded">
+                    {localFilters.minVol}
+                  </span>
                 </div>
                 <input
                   type="range"
@@ -848,33 +1106,55 @@ const ScreenerModal = ({ isOpen, onClose, onApply, currentFilters }) => {
                   max="10000"
                   step="100"
                   value={localFilters.minVol}
-                  onChange={(e) => setLocalFilters({ ...localFilters, minVol: Number(e.target.value) })}
+                  onChange={(e) =>
+                    setLocalFilters({
+                      ...localFilters,
+                      minVol: Number(e.target.value),
+                    })
+                  }
                   className="w-full h-2 bg-neutral-800 rounded-lg appearance-none cursor-pointer accent-amber-500"
                 />
               </div>
 
+              {/* 價格區間 */}
               <div>
                 <div className="flex justify-between text-sm mb-2 text-neutral-400">
                   <span>股價區間 (元)</span>
                 </div>
                 <div className="flex items-center gap-3">
                   <div className="relative flex-1">
-                    <div className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-500 text-xs">$</div>
+                    <div className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-500 text-xs">
+                      $
+                    </div>
                     <input
                       type="number"
                       value={localFilters.minPrice}
-                      onChange={(e) => setLocalFilters({ ...localFilters, minPrice: Number(e.target.value) })}
+                      onChange={(e) =>
+                        setLocalFilters({
+                          ...localFilters,
+                          minPrice: Number(e.target.value),
+                        })
+                      }
                       className="w-full bg-neutral-800 border border-neutral-700 rounded-xl py-2 pl-6 pr-3 text-sm text-white focus:border-amber-500 outline-none"
                       placeholder="Min"
                     />
                   </div>
-                  <span className="text-neutral-500">-</span>
+                  <span className="text-neutral-500">
+                    -
+                  </span>
                   <div className="relative flex-1">
-                    <div className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-500 text-xs">$</div>
+                    <div className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-500 text-xs">
+                      $
+                    </div>
                     <input
                       type="number"
                       value={localFilters.maxPrice}
-                      onChange={(e) => setLocalFilters({ ...localFilters, maxPrice: Number(e.target.value) })}
+                      onChange={(e) =>
+                        setLocalFilters({
+                          ...localFilters,
+                          maxPrice: Number(e.target.value),
+                        })
+                      }
                       className="w-full bg-neutral-800 border border-neutral-700 rounded-xl py-2 pl-6 pr-3 text-sm text-white focus:border-amber-500 outline-none"
                       placeholder="Max"
                     />
@@ -882,24 +1162,54 @@ const ScreenerModal = ({ isOpen, onClose, onApply, currentFilters }) => {
                 </div>
               </div>
 
+              {/* 今日走勢 */}
               <div>
-                <div className="text-sm text-neutral-400 mb-3">今日走勢</div>
+                <div className="text-sm text-neutral-400 mb-3">
+                  今日走勢
+                </div>
                 <div className="grid grid-cols-3 gap-2">
                   <button
-                    onClick={() => setLocalFilters({ ...localFilters, trend: 'all' })}
-                    className={`py-2 rounded-xl text-sm font-medium transition-colors border ${localFilters.trend === 'all' ? 'bg-neutral-700 text-white border-neutral-600' : 'bg-neutral-900 text-neutral-500 border-neutral-800 hover:bg-neutral-800'}`}
+                    onClick={() =>
+                      setLocalFilters({
+                        ...localFilters,
+                        trend: 'all',
+                      })
+                    }
+                    className={`py-2 rounded-xl text-sm font-medium transition-colors border ${
+                      localFilters.trend === 'all'
+                        ? 'bg-neutral-700 text-white border-neutral-600'
+                        : 'bg-neutral-900 text-neutral-500 border-neutral-800 hover:bg-neutral-800'
+                    }`}
                   >
                     全部
                   </button>
                   <button
-                    onClick={() => setLocalFilters({ ...localFilters, trend: 'bullish' })}
-                    className={`py-2 rounded-xl text-sm font-medium transition-colors border ${localFilters.trend === 'bullish' ? 'bg-red-500/20 text-red-400 border-red-500/50' : 'bg-neutral-900 text-neutral-500 border-neutral-800 hover:bg-neutral-800'}`}
+                    onClick={() =>
+                      setLocalFilters({
+                        ...localFilters,
+                        trend: 'bullish',
+                      })
+                    }
+                    className={`py-2 rounded-xl text-sm font-medium transition-colors border ${
+                      localFilters.trend === 'bullish'
+                        ? 'bg-red-500/20 text-red-400 border-red-500/50'
+                        : 'bg-neutral-900 text-neutral-500 border-neutral-800 hover:bg-neutral-800'
+                    }`}
                   >
                     強勢上漲
                   </button>
                   <button
-                    onClick={() => setLocalFilters({ ...localFilters, trend: 'bearish' })}
-                    className={`py-2 rounded-xl text-sm font-medium transition-colors border ${localFilters.trend === 'bearish' ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/50' : 'bg-neutral-900 text-neutral-500 border-neutral-800 hover:bg-neutral-800'}`}
+                    onClick={() =>
+                      setLocalFilters({
+                        ...localFilters,
+                        trend: 'bearish',
+                      })
+                    }
+                    className={`py-2 rounded-xl text-sm font-medium transition-colors border ${
+                      localFilters.trend === 'bearish'
+                        ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/50'
+                        : 'bg-neutral-900 text-neutral-500 border-neutral-800 hover:bg-neutral-800'
+                    }`}
                   >
                     弱勢下跌
                   </button>
@@ -910,14 +1220,14 @@ const ScreenerModal = ({ isOpen, onClose, onApply, currentFilters }) => {
         </div>
 
         {/* Footer */}
-        <div className="p-5 border-t border-neutral-800 bg-neutral-900 sticky bottom-0 rounded-b-3xl嚇 flex gap-3">
-          <button 
+        <div className="p-5 border-t border-neutral-800 bg-neutral-900 sticky bottom-0 rounded-b-3xl flex gap-3">
+          <button
             onClick={onClose}
             className="flex-1 py-3 rounded-xl text-neutral-400 font-medium hover:bg-neutral-800 transition-colors"
           >
             取消
           </button>
-          <button 
+          <button
             onClick={() => onApply(localFilters)}
             className="flex-1 py-3 rounded-xl bg-gradient-to-r from-blue-600 to-blue-500 text-white font-bold shadow-lg shadow-blue-500/20 hover:from-blue-500 hover:to-blue-400 transition-all flex items-center justify-center gap-2"
           >
@@ -931,29 +1241,35 @@ const ScreenerModal = ({ isOpen, onClose, onApply, currentFilters }) => {
 };
 
 // =========================
-// 主元件：進階版 吳媽媽台股神探
+// 主元件：吳媽媽台股神探 PRO
 // =========================
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('overview'); // overview | analysis
 
-  // Market Data (TWSE Cache)
+  // Market data
   const [marketCache, setMarketCache] = useState([]);
-  const [stocks, setStocks] = useState([]); // 顯示在列表中的股票
-
+  const [stocks, setStocks] = useState([]);
   const [selectedStock, setSelectedStock] = useState(null);
+
   const [loading, setLoading] = useState(true);
   const [progress, setProgress] = useState(0);
-  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  const [isSidebarOpen, setIsSidebarOpen] =
+    useState(true);
 
-  // Firebase User State
+  // Firebase user
   const [user, setUser] = useState(null);
 
+  // 技術圖頁籤 & 時間區間
   const [techTab, setTechTab] = useState('chips'); // chips | kd | macd
   const [timeframe, setTimeframe] = useState('6m'); // 3m | 6m | 1y | 5y
-  const [searchQuery, setSearchQuery] = useState('');
-  const [searchSuggestions, setSearchSuggestions] = useState([]);
 
+  // 搜尋
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchSuggestions, setSearchSuggestions] =
+    useState([]);
+
+  // 策略 & 篩選
   const [strategy, setStrategy] = useState('custom'); // custom | long | short | value | favorites
   const [filters, setFilters] = useState({
     maxPe: 30,
@@ -962,22 +1278,27 @@ export default function App() {
     minVol: 500,
     minPrice: 0,
     maxPrice: 2000,
-    trend: 'all', // all | bullish | bearish
-    minForeign: 0, // 外資
-    minTrust: 0,   // 投信
+    trend: 'all',
+    minForeign: 0,
+    minTrust: 0,
   });
+
   const [showBB, setShowBB] = useState(false);
-  const [loadingFullHistory, setLoadingFullHistory] = useState(false);
+  const [loadingFullHistory, setLoadingFullHistory] =
+    useState(false);
   const [errorMsg, setErrorMsg] = useState('');
 
-  // Modal State
-  const [showScreenerModal, setShowScreenerModal] = useState(false);
+  const [showScreenerModal, setShowScreenerModal] =
+    useState(false);
 
-  // 我的最愛
+  // 我的最愛（localStorage + 雲端）
   const [favorites, setFavorites] = useState(() => {
     if (typeof window === 'undefined') return [];
     try {
-      const saved = window.localStorage.getItem('wuMamaFavorites_v2');
+      const saved =
+        window.localStorage.getItem(
+          'wuMamaFavorites_v2',
+        );
       return saved ? JSON.parse(saved) : [];
     } catch {
       return [];
@@ -988,45 +1309,71 @@ export default function App() {
   useEffect(() => {
     const initAuth = async () => {
       try {
-        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-          await signInWithCustomToken(auth, __initial_auth_token);
+        if (
+          typeof __initial_auth_token !== 'undefined' &&
+          __initial_auth_token
+        ) {
+          await signInWithCustomToken(
+            auth,
+            __initial_auth_token,
+          );
         } else {
           await signInAnonymously(auth);
         }
       } catch (e) {
-        console.error("Firebase Auth Error:", e);
+        console.error('Firebase Auth Error:', e);
       }
     };
+
     initAuth();
-    const unsubscribe = onAuthStateChanged(auth, setUser);
+    const unsubscribe = onAuthStateChanged(
+      auth,
+      setUser,
+    );
     return () => unsubscribe();
   }, []);
 
-  // Firebase Sync: favorites
+  // Firebase 雲端同步 favorites
   useEffect(() => {
     if (!user) return;
 
-    const docRef = doc(db, 'artifacts', appId, 'users', user.uid, 'data', 'favorites');
+    const docRef = doc(
+      db,
+      'artifacts',
+      appId,
+      'users',
+      user.uid,
+      'data',
+      'favorites',
+    );
 
-    const unsubscribe = onSnapshot(docRef, (docSnap) => {
-      if (docSnap.exists()) {
-        const data = docSnap.data();
-        if (data.list && Array.isArray(data.list)) {
-          setFavorites(data.list);
-          window.localStorage.setItem('wuMamaFavorites_v2', JSON.stringify(data.list));
-        }
-      } else {
-        if (favorites.length > 0) {
+    const unsubscribe = onSnapshot(
+      docRef,
+      (docSnap) => {
+        if (docSnap.exists()) {
+          const data = docSnap.data();
+          if (data.list && Array.isArray(data.list)) {
+            setFavorites(data.list);
+            window.localStorage.setItem(
+              'wuMamaFavorites_v2',
+              JSON.stringify(data.list),
+            );
+          }
+        } else if (favorites.length > 0) {
+          // 雲端沒有資料時，先上傳本地
           setDoc(docRef, { list: favorites }, { merge: true });
         }
-      }
-    }, (error) => {
-      console.error("Sync Error:", error);
-    });
+      },
+      (error) => {
+        console.error('Sync Error:', error);
+      },
+    );
 
     return () => unsubscribe();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
 
+  // 切換最愛
   const toggleFavorite = async (stockId) => {
     let newFavs;
     if (favorites.includes(stockId)) {
@@ -1036,19 +1383,30 @@ export default function App() {
     }
 
     setFavorites(newFavs);
-    window.localStorage.setItem('wuMamaFavorites_v2', JSON.stringify(newFavs));
+    window.localStorage.setItem(
+      'wuMamaFavorites_v2',
+      JSON.stringify(newFavs),
+    );
 
     if (user) {
       try {
-        const docRef = doc(db, 'artifacts', appId, 'users', user.uid, 'data', 'favorites');
+        const docRef = doc(
+          db,
+          'artifacts',
+          appId,
+          'users',
+          user.uid,
+          'data',
+          'favorites',
+        );
         await setDoc(docRef, { list: newFavs }, { merge: true });
       } catch (e) {
-        console.error("Cloud save failed:", e);
+        console.error('Cloud save failed:', e);
       }
     }
   };
 
-  // 初始化：從 TWSE 載入全市場資料
+  // 第一次載入 TWSE 市場資料
   const loadMarketData = async () => {
     setLoading(true);
     setErrorMsg('');
@@ -1059,14 +1417,22 @@ export default function App() {
       setMarketCache(marketData);
       setProgress(100);
 
-      const initialStocks = marketData.filter(s => INITIAL_WATCH_LIST_IDS.includes(s.id));
+      const initialStocks = marketData.filter((s) =>
+        INITIAL_WATCH_LIST_IDS.includes(s.id),
+      );
 
-      setStocks(initialStocks.map(s => processStockData(s)));
-      setSelectedStock(processStockData(initialStocks[0]));
-
+      const processedList = initialStocks.map((s) =>
+        processStockData(s),
+      );
+      setStocks(processedList);
+      if (processedList.length > 0) {
+        setSelectedStock(processedList[0]);
+      }
     } catch (e) {
       console.error(e);
-      setErrorMsg('連線證交所 API 失敗，請檢查網路或是 CORS 設定。');
+      setErrorMsg(
+        '連線證交所 API 失敗，請檢查網路或是 CORS 設定。',
+      );
     } finally {
       setLoading(false);
     }
@@ -1076,6 +1442,7 @@ export default function App() {
     loadMarketData();
   }, []);
 
+  // 策略按鈕
   const handleStrategyChange = (newStrategy) => {
     if (newStrategy === 'custom') {
       setShowScreenerModal(true);
@@ -1091,7 +1458,7 @@ export default function App() {
     setActiveTab('overview');
   };
 
-  // 進入個股分析頁時，抓取詳細歷史資料
+  // 進入 analysis 頁時抓 FinMind 詳細歷史
   useEffect(() => {
     const checkAndLoadFullHistory = async () => {
       if (
@@ -1103,20 +1470,34 @@ export default function App() {
         setLoadingFullHistory(true);
         setErrorMsg('');
         try {
-          const cachedBase = marketCache.find(s => s.id === selectedStock.id) || selectedStock;
-          const fullData = await fetchDetailedHistory(selectedStock, cachedBase);
+          const cachedBase =
+            marketCache.find(
+              (s) => s.id === selectedStock.id,
+            ) || selectedStock;
+          const fullData = await fetchDetailedHistory(
+            selectedStock,
+            cachedBase,
+          );
 
-          setStocks((prev) => prev.map((s) => (s.id === fullData.id ? fullData : s)));
+          setStocks((prev) =>
+            prev.map((s) =>
+              s.id === fullData.id ? fullData : s,
+            ),
+          );
           setSelectedStock(fullData);
         } catch (e) {
           console.error(e);
-          setErrorMsg('載入 K 線歷史資料時發生錯誤 (FinMind API 失敗)。');
+          setErrorMsg(
+            '載入 K 線歷史資料時發生錯誤 (FinMind API 失敗)。',
+          );
         } finally {
           setLoadingFullHistory(false);
         }
       }
     };
+
     checkAndLoadFullHistory();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab, selectedStock?.id]);
 
   // 搜尋建議
@@ -1126,16 +1507,20 @@ export default function App() {
       return;
     }
     const query = searchQuery.trim().toLowerCase();
-    const matches = marketCache.filter(s =>
-      s.id.includes(query) || s.name.includes(query)
-    ).slice(0, 8);
+    const matches = marketCache
+      .filter(
+        (s) =>
+          s.id.includes(query) ||
+          s.name.includes(query),
+      )
+      .slice(0, 8);
     setSearchSuggestions(matches);
   }, [searchQuery, marketCache]);
 
   const selectSuggestion = (stockBase) => {
     const processed = processStockData(stockBase);
-    if (!stocks.find(s => s.id === stockBase.id)) {
-      setStocks(prev => [processed, ...prev]);
+    if (!stocks.find((s) => s.id === stockBase.id)) {
+      setStocks((prev) => [processed, ...prev]);
     }
     setSelectedStock(processed);
     setActiveTab('analysis');
@@ -1144,69 +1529,112 @@ export default function App() {
   };
 
   // =========================
-  // 策略判斷 & 篩選
+  // 策略篩選
   // =========================
 
-  const isLongStrategy = (stock) => {
-    return stock.change > 0 && stock.yield > 3 && stock.pe > 0 && stock.pe < 25;
-  };
+  const isLongStrategy = (stock) =>
+    stock.change > 0 &&
+    stock.yield > 3 &&
+    stock.pe > 0 &&
+    stock.pe < 25;
 
-  const isShortStrategy = (stock) => {
-    return stock.change < 0 && (stock.pe > 40 || stock.pe < 0);
-  };
+  const isShortStrategy = (stock) =>
+    stock.change < 0 &&
+    (stock.pe > 40 || stock.pe < 0);
 
-  const isValueStrategy = (stock) => {
-    return stock.pe > 0 && stock.pe < 15 && stock.yield > 5 && stock.pb < 1.5;
-  };
+  const isValueStrategy = (stock) =>
+    stock.pe > 0 &&
+    stock.pe < 15 &&
+    stock.yield > 5 &&
+    stock.pb < 1.5;
 
   const getStrategyStocks = () => {
-    if (strategy === 'long') return marketCache.filter(isLongStrategy).slice(0, 50);
-    if (strategy === 'short') return marketCache.filter(isShortStrategy).slice(0, 50);
-    if (strategy === 'value') return marketCache.filter(isValueStrategy).slice(0, 50);
-    if (strategy === 'favorites') return marketCache.filter(s => favorites.includes(s.id));
+    if (strategy === 'long')
+      return marketCache.filter(isLongStrategy).slice(0, 50);
+    if (strategy === 'short')
+      return marketCache
+        .filter(isShortStrategy)
+        .slice(0, 50);
+    if (strategy === 'value')
+      return marketCache
+        .filter(isValueStrategy)
+        .slice(0, 50);
+    if (strategy === 'favorites')
+      return marketCache.filter((s) =>
+        favorites.includes(s.id),
+      );
 
-    // Enhanced Custom Filter (包含籌碼)
-    return marketCache.filter((stock) => {
-      const passPe = stock.pe <= filters.maxPe && stock.pe > 0;
-      const passYield = stock.yield >= filters.minYield;
-      const passPb = stock.pb <= filters.maxPb && stock.pb > 0;
+    // 自訂篩選
+    return marketCache
+      .filter((stock) => {
+        const passPe =
+          stock.pe <= filters.maxPe && stock.pe > 0;
+        const passYield =
+          stock.yield >= filters.minYield;
+        const passPb =
+          stock.pb <= filters.maxPb && stock.pb > 0;
 
-      // Tech
-      const passVol = (stock.volume / 1000) >= filters.minVol;
-      const passPrice = stock.price >= filters.minPrice && stock.price <= filters.maxPrice;
+        const passVol =
+          stock.volume / 1000 >= filters.minVol;
+        const passPrice =
+          stock.price >= filters.minPrice &&
+          stock.price <= filters.maxPrice;
 
-      let passTrend = true;
-      if (filters.trend === 'bullish') passTrend = stock.change > 0;
-      if (filters.trend === 'bearish') passTrend = stock.change < 0;
+        let passTrend = true;
+        if (filters.trend === 'bullish')
+          passTrend = stock.change > 0;
+        if (filters.trend === 'bearish')
+          passTrend = stock.change < 0;
 
-      // Chips
-      const passForeign = stock.foreignNet >= filters.minForeign;
-      const passTrust = stock.trustNet >= filters.minTrust;
+        const passForeign =
+          stock.foreignNet >= filters.minForeign;
+        const passTrust =
+          stock.trustNet >= filters.minTrust;
 
-      return passPe && passYield && passPb && passVol && passPrice && passTrend && passForeign && passTrust;
-    }).slice(0, 100);
+        return (
+          passPe &&
+          passYield &&
+          passPb &&
+          passVol &&
+          passPrice &&
+          passTrend &&
+          passForeign &&
+          passTrust
+        );
+      })
+      .slice(0, 100);
   };
 
   const displayStocks = useMemo(() => {
     const strategyResults = getStrategyStocks();
-    return strategyResults.map(s => {
-      const existing = stocks.find(e => e.id === s.id);
+    return strategyResults.map((s) => {
+      const existing = stocks.find(
+        (e) => e.id === s.id,
+      );
       return existing || processStockData(s);
     });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [strategy, filters, marketCache, stocks, favorites]);
 
   const strategyCounts = useMemo(
     () => ({
       long: marketCache.filter(isLongStrategy).length,
       short: marketCache.filter(isShortStrategy).length,
-      value: marketCache.filter(isValueStrategy).length,
+      value:
+        marketCache.filter(isValueStrategy).length,
       favorites: favorites.length,
     }),
     [marketCache, favorites],
   );
 
   const currentBacktest = useMemo(() => {
-    if (!selectedStock) return { roi: 0, winRate: 0, count: 0, history: [] };
+    if (!selectedStock)
+      return {
+        roi: 0,
+        winRate: 0,
+        count: 0,
+        history: [],
+      };
     let t = 'long';
     if (strategy === 'short') t = 'short';
     if (strategy === 'value') t = 'value';
@@ -1214,15 +1642,15 @@ export default function App() {
   }, [selectedStock, strategy]);
 
   const displayChartData = useMemo(() => {
-    const hist = currentBacktest.history && currentBacktest.history.length > 0
-      ? currentBacktest.history
-      : (selectedStock?.history || []);
+    const hist =
+      currentBacktest.history &&
+      currentBacktest.history.length > 0
+        ? currentBacktest.history
+        : selectedStock?.history || [];
 
     if (!hist.length) return [];
 
-    if (!selectedStock.isFullHistory) {
-      return hist;
-    }
+    if (!selectedStock.isFullHistory) return hist;
 
     const len = hist.length;
     if (timeframe === '3m') {
@@ -1240,14 +1668,23 @@ export default function App() {
     return hist;
   }, [selectedStock, timeframe, currentBacktest]);
 
+  // =========================
+  // Loading 畫面
+  // =========================
+
   if (loading) {
     return (
       <div className="h-screen flex flex-col items-center justify-center bg-neutral-950 text-neutral-400 font-sans">
-        <Loader2 size={56} className="animate-spin text-amber-500 mb-6" />
+        <Loader2
+          size={56}
+          className="animate-spin text-amber-500 mb-6"
+        />
         <h2 className="text-2xl font-bold mb-2 text-white tracking-wider">
           吳媽媽台股神探 PRO
         </h2>
-        <p className="text-sm mb-4 font-light">正在連線台灣證券交易所 OpenAPI...</p>
+        <p className="text-sm mb-4 font-light">
+          正在連線台灣證券交易所 OpenAPI...
+        </p>
         <div className="w-64 h-1.5 bg-neutral-800 rounded-full overflow-hidden">
           <div
             className="h-full bg-gradient-to-r from-amber-600 to-yellow-400 transition-all duration-300"
@@ -1266,6 +1703,10 @@ export default function App() {
       </div>
     );
   }
+
+  // =========================
+  // 主畫面
+  // =========================
 
   return (
     <div className="flex h-screen bg-neutral-950 text-neutral-200 font-sans overflow-hidden selection:bg-amber-500/30">
@@ -1291,10 +1732,12 @@ export default function App() {
             吳媽媽台股神探 PRO
           </h1>
         </div>
+
         <div className="p-5 flex flex-col gap-2 overflow-y-auto flex-1 custom-scrollbar">
           <div className="text-xs font-bold text-neutral-500 mb-2 px-2 uppercase tracking-wider">
             市場概況
           </div>
+
           <button
             onClick={() => setActiveTab('overview')}
             className={`flex items-center gap-3 px-4 py-3.5 text-sm font-medium rounded-xl transition-all ${
@@ -1320,17 +1763,28 @@ export default function App() {
             TWSE 智慧選股
           </div>
 
-          {/* 雲端同步狀態指示燈 */}
+          {/* 雲端同步狀態 */}
           <div className="px-4 py-2 mb-2 flex items-center gap-2 bg-neutral-800/50 rounded-lg mx-2 border border-neutral-800">
-            <div className={`w-2 h-2 rounded-full ${user ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.6)]' : 'bg-neutral-600'}`} />
+            <div
+              className={`w-2 h-2 rounded-full ${
+                user
+                  ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.6)]'
+                  : 'bg-neutral-600'
+              }`}
+            ></div>
             <div className="flex flex-col">
               <span className="text-[10px] font-bold text-neutral-300">
                 {user ? '雲端同步中' : '離線模式'}
               </span>
-              {user && <span className="text-[9px] text-neutral-600">ID: {user.uid.slice(0, 6)}...</span>}
+              {user && (
+                <span className="text-[9px] text-neutral-600">
+                  ID: {user.uid.slice(0, 6)}...
+                </span>
+              )}
             </div>
           </div>
 
+          {/* 策略按鈕們 */}
           <button
             onClick={() => handleStrategyChange('long')}
             className={`group flex items-center gap-3 px-4 py-3.5 text-sm font-medium rounded-xl mb-2 transition-all border relative overflow-hidden ${
@@ -1339,7 +1793,13 @@ export default function App() {
                 : 'bg-neutral-900/50 border-neutral-800 text-neutral-400 hover:bg-neutral-800 hover:border-neutral-700'
             }`}
           >
-            <div className={`p-2 rounded-lg transition-colors ${strategy === 'long' ? 'bg-red-500/20 text-red-400' : 'bg-neutral-800 text-neutral-500 group-hover:text-red-400 group-hover:bg-red-500/10'}`}>
+            <div
+              className={`p-2 rounded-lg transition-colors ${
+                strategy === 'long'
+                  ? 'bg-red-500/20 text-red-400'
+                  : 'bg-neutral-800 text-neutral-500 group-hover:text-red-400 group-hover:bg-red-500/10'
+              }`}
+            >
               <Zap size={18} />
             </div>
             <div className="flex-1 flex flex-col">
@@ -1347,12 +1807,14 @@ export default function App() {
                 多頭潛力股
                 {strategyCounts.long > 0 && (
                   <span className="text-[10px] bg-red-500/20 text-red-400 px-1.5 py-0.5 rounded-full ml-2 h-fit">
-                    {strategyCounts.long > 99 ? '99+' : strategyCounts.long}
+                    {strategyCounts.long > 99
+                      ? '99+'
+                      : strategyCounts.long}
                   </span>
                 )}
               </div>
               <div className="text-[10px] opacity-60 font-normal mt-0.5">
-                收紅+殖利率{'>'}3%+合理PE
+                收紅+殖利率&gt;3%+合理PE
               </div>
             </div>
           </button>
@@ -1365,7 +1827,13 @@ export default function App() {
                 : 'bg-neutral-900/50 border-neutral-800 text-neutral-400 hover:bg-neutral-800 hover:border-neutral-700'
             }`}
           >
-            <div className={`p-2 rounded-lg transition-colors ${strategy === 'short' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-neutral-800 text-neutral-500 group-hover:text-emerald-400 group-hover:bg-emerald-500/10'}`}>
+            <div
+              className={`p-2 rounded-lg transition-colors ${
+                strategy === 'short'
+                  ? 'bg-emerald-500/20 text-emerald-400'
+                  : 'bg-neutral-800 text-neutral-500 group-hover:text-emerald-400 group-hover:bg-emerald-500/10'
+              }`}
+            >
               <TrendingDown size={18} />
             </div>
             <div className="flex-1 flex flex-col">
@@ -1373,7 +1841,9 @@ export default function App() {
                 空頭警示股
                 {strategyCounts.short > 0 && (
                   <span className="text-[10px] bg-emerald-500/20 text-emerald-400 px-1.5 py-0.5 rounded-full ml-2 h-fit">
-                    {strategyCounts.short > 99 ? '99+' : strategyCounts.short}
+                    {strategyCounts.short > 99
+                      ? '99+'
+                      : strategyCounts.short}
                   </span>
                 )}
               </div>
@@ -1391,7 +1861,13 @@ export default function App() {
                 : 'bg-neutral-900/50 border-neutral-800 text-neutral-400 hover:bg-neutral-800 hover:border-neutral-700'
             }`}
           >
-            <div className={`p-2 rounded-lg transition-colors ${strategy === 'value' ? 'bg-purple-500/20 text-purple-400' : 'bg-neutral-800 text-neutral-500 group-hover:text-purple-400 group-hover:bg-purple-500/10'}`}>
+            <div
+              className={`p-2 rounded-lg transition-colors ${
+                strategy === 'value'
+                  ? 'bg-purple-500/20 text-purple-400'
+                  : 'bg-neutral-800 text-neutral-500 group-hover:text-purple-400 group-hover:bg-purple-500/10'
+              }`}
+            >
               <Gem size={18} />
             </div>
             <div className="flex-1 flex flex-col">
@@ -1399,7 +1875,9 @@ export default function App() {
                 價值型存股
                 {strategyCounts.value > 0 && (
                   <span className="text-[10px] bg-purple-500/20 text-purple-400 px-1.5 py-0.5 rounded-full ml-2 h-fit">
-                    {strategyCounts.value > 99 ? '99+' : strategyCounts.value}
+                    {strategyCounts.value > 99
+                      ? '99+'
+                      : strategyCounts.value}
                   </span>
                 )}
               </div>
@@ -1417,7 +1895,13 @@ export default function App() {
                 : 'bg-neutral-900/50 border-neutral-800 text-neutral-400 hover:bg-neutral-800 hover:border-neutral-700'
             }`}
           >
-            <div className={`p-2 rounded-lg transition-colors ${strategy === 'favorites' ? 'bg-amber-500/20 text-amber-400' : 'bg-neutral-800 text-neutral-500 group-hover:text-amber-400 group-hover:bg-amber-500/10'}`}>
+            <div
+              className={`p-2 rounded-lg transition-colors ${
+                strategy === 'favorites'
+                  ? 'bg-amber-500/20 text-amber-400'
+                  : 'bg-neutral-800 text-neutral-500 group-hover:text-amber-400 group-hover:bg-amber-500/10'
+              }`}
+            >
               <Heart size={18} />
             </div>
             <div className="flex-1 flex flex-col">
@@ -1443,7 +1927,13 @@ export default function App() {
                 : 'bg-neutral-900/50 border-neutral-800 text-neutral-400 hover:bg-neutral-800 hover:border-neutral-700'
             }`}
           >
-            <div className={`p-2 rounded-lg transition-colors ${strategy === 'custom' ? 'bg-blue-500/20 text-blue-400' : 'bg-neutral-800 text-neutral-500 group-hover:text-blue-400 group-hover:bg-blue-500/10'}`}>
+            <div
+              className={`p-2 rounded-lg transition-colors ${
+                strategy === 'custom'
+                  ? 'bg-blue-500/20 text-blue-400'
+                  : 'bg-neutral-800 text-neutral-500 group-hover:text-blue-400 group-hover:bg-blue-500/10'
+              }`}
+            >
               <Sliders size={18} />
             </div>
             <div className="flex-1 flex flex-col">
@@ -1488,7 +1978,9 @@ export default function App() {
         <header className="h-20 bg-neutral-900/80 backdrop-blur-md border-b border-neutral-800 flex items-center justify-between px-6 shrink-0 z-10 sticky top-0">
           <div className="flex items-center gap-4 w-full min-w-0">
             <button
-              onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+              onClick={() =>
+                setIsSidebarOpen(!isSidebarOpen)
+              }
               className="p-2.5 hover:bg-neutral-800 rounded-xl text-neutral-400 hover:text-white shrink-0 transition-colors"
             >
               <Menu size={20} />
@@ -1501,32 +1993,69 @@ export default function App() {
                   className="flex items-center justify-center px-4 py-2 text-neutral-400 hover:text-white hover:bg-neutral-800 rounded-lg transition-colors shrink-0 border border-neutral-700/50 md:border-none md:pl-0 gap-2"
                 >
                   <ArrowLeft size={18} />
-                  <span className="hidden md:inline text-sm font-medium">返回</span>
+                  <span className="hidden md:inline text-sm font-medium">
+                    返回
+                  </span>
                 </button>
+
                 <div className="relative group flex flex-col min-w-0 flex-1 max-w-md">
                   <div className="flex items-center gap-3 cursor-pointer p-2 rounded-lg hover:bg-neutral-800 transition-colors">
-                    <h2 className="text-xl font-bold text-white truncate">{selectedStock?.name}</h2>
-                    <span className="text-amber-500 font-mono text-sm bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20">{selectedStock?.id}</span>
-                    <ChevronDown size={16} className="text-neutral-500 shrink-0" />
+                    <h2 className="text-xl font-bold text-white truncate">
+                      {selectedStock?.name}
+                    </h2>
+                    <span className="text-amber-500 font-mono text-sm bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/20">
+                      {selectedStock?.id}
+                    </span>
+                    <ChevronDown
+                      size={16}
+                      className="text-neutral-500 shrink-0"
+                    />
                   </div>
                   <div className="absolute top-full left-0 w-full bg-neutral-900 border border-neutral-800 rounded-xl shadow-2xl mt-2 hidden group-hover:block max-h-60 overflow-y-auto z-50">
-                    {stocks.map(s => (
+                    {stocks.map((s) => (
                       <div
                         key={s.id}
                         onClick={() => setSelectedStock(s)}
                         className="p-3 hover:bg-neutral-800 cursor-pointer flex justify-between"
                       >
-                        <span>{s.id} {s.name}</span>
-                        <span className={s.change >= 0 ? "text-red-400" : "text-green-400"}>{s.price}</span>
+                        <span>
+                          {s.id} {s.name}
+                        </span>
+                        <span
+                          className={
+                            s.change >= 0
+                              ? 'text-red-400'
+                              : 'text-green-400'
+                          }
+                        >
+                          {s.price}
+                        </span>
                       </div>
                     ))}
                   </div>
                 </div>
+
                 <button
-                  onClick={() => selectedStock && toggleFavorite(selectedStock.id)}
-                  className={`p-2 rounded-lg border transition-colors ${selectedStock && favorites.includes(selectedStock.id) ? 'bg-red-500/10 border-red-500/30 text-red-500' : 'bg-neutral-800 border-neutral-700 text-neutral-400 hover:text-white'}`}
+                  onClick={() =>
+                    selectedStock &&
+                    toggleFavorite(selectedStock.id)
+                  }
+                  className={`p-2 rounded-lg border transition-colors ${
+                    selectedStock &&
+                    favorites.includes(selectedStock.id)
+                      ? 'bg-red-500/10 border-red-500/30 text-red-500'
+                      : 'bg-neutral-800 border-neutral-700 text-neutral-400 hover:text-white'
+                  }`}
                 >
-                  <Heart size={20} fill={selectedStock && favorites.includes(selectedStock.id) ? 'currentColor' : 'none'} />
+                  <Heart
+                    size={20}
+                    fill={
+                      selectedStock &&
+                      favorites.includes(selectedStock.id)
+                        ? 'currentColor'
+                        : 'none'
+                    }
+                  />
                 </button>
               </div>
             ) : (
@@ -1544,11 +2073,12 @@ export default function App() {
                     ? '智慧選股掃描'
                     : '台股戰情室'}
                 </h2>
-                {strategy !== 'custom' && strategy !== 'favorites' && (
-                  <span className="text-xs bg-amber-500/10 text-amber-400 px-2.5 py-1 rounded-full border border-amber-500/20 whitespace-nowrap">
-                    AI 策略模式
-                  </span>
-                )}
+                {strategy !== 'custom' &&
+                  strategy !== 'favorites' && (
+                    <span className="text-xs bg-amber-500/10 text-amber-400 px-2.5 py-1 rounded-full border border-amber-500/20 whitespace-nowrap">
+                      AI 策略模式
+                    </span>
+                  )}
               </div>
             )}
 
@@ -1562,25 +2092,33 @@ export default function App() {
                   <input
                     type="text"
                     value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
+                    onChange={(e) =>
+                      setSearchQuery(e.target.value)
+                    }
                     placeholder="輸入代碼或名稱 (如: 台積, 2330)..."
-                    className="w-full pl-10 pr-4 py-2 text-sm border border-neutral-800 rounded-xl bg-neutral-900 text-white focus:border-amber-500 focus:ring-1 focus:ring-amber-500 outline-none transition-all placeholder-neutral-600"
+                    className="w-full pl-10 pr-4 py-2 text-sm border border-neutral-800 rounded-xl bg-neutral-900 text-white focus:border-amber-500 focus:ring-1 focus:ring-amber-500 outline-none placeholder-neutral-600"
                   />
                 </div>
                 {searchSuggestions.length > 0 && (
                   <div className="absolute top-full left-0 w-full mt-2 bg-neutral-900 border border-neutral-800 rounded-xl shadow-2xl z-50 overflow-hidden">
-                    {searchSuggestions.map(s => (
+                    {searchSuggestions.map((s) => (
                       <button
                         key={s.id}
                         onClick={() => selectSuggestion(s)}
                         className="w-full text-left px-4 py-3 hover:bg-neutral-800 flex justify-between items-center group border-b border-neutral-800/50 last:border-0"
                       >
                         <div>
-                          <span className="font-bold text-white mr-2">{s.id}</span>
-                          <span className="text-neutral-400 group-hover:text-amber-400">{s.name}</span>
+                          <span className="font-bold text-white mr-2">
+                            {s.id}
+                          </span>
+                          <span className="text-neutral-400 group-hover:text-amber-400">
+                            {s.name}
+                          </span>
                         </div>
                         <div className="text-right">
-                          <div className="text-xs text-neutral-500">PE: {s.pe}</div>
+                          <div className="text-xs text-neutral-500">
+                            PE: {s.pe}
+                          </div>
                         </div>
                       </button>
                     ))}
@@ -1591,25 +2129,30 @@ export default function App() {
           </div>
         </header>
 
+        {/* Main body */}
         <main className="flex-1 overflow-y-auto p-6 md:p-8 bg-neutral-950">
           {errorMsg && (
             <div className="max-w-7xl mx-auto mb-4">
               <div className="p-3 rounded-xl border border-red-500/40 bg-red-500/10 text-xs text-red-300 flex items-center gap-2">
-                <AlertTriangle size={14} /> <span>{errorMsg}</span>
+                <AlertTriangle size={14} />
+                <span>{errorMsg}</span>
               </div>
             </div>
           )}
 
+          {/* Overview */}
           {activeTab === 'overview' && (
             <div className="max-w-7xl mx-auto">
               <div className="flex items-center justify-between mb-8">
                 <div>
-                  <h3 className="text-lg font-medium text-neutral-400">篩選結果</h3>
+                  <h3 className="text-lg font-medium text-neutral-400">
+                    篩選結果
+                  </h3>
                   <p className="text-sm text-neutral-500 mt-1">
-                    共找到
+                    共找到{' '}
                     <span className="text-white font-bold text-lg mx-1">
                       {displayStocks.length}
-                    </span>
+                    </span>{' '}
                     檔符合條件的標的 (來源: TWSE)
                   </p>
                 </div>
@@ -1617,20 +2160,26 @@ export default function App() {
                   <input
                     type="text"
                     value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
+                    onChange={(e) =>
+                      setSearchQuery(e.target.value)
+                    }
                     placeholder="搜尋股票..."
                     className="w-full pl-4 pr-3 py-1.5 text-xs border border-neutral-800 rounded-xl bg-neutral-900 text-white focus:border-amber-500 outline-none"
                   />
                   {searchSuggestions.length > 0 && (
                     <div className="absolute top-full left-0 w-full mt-2 bg-neutral-900 border border-neutral-800 rounded-xl shadow-2xl z-50 overflow-hidden">
-                      {searchSuggestions.map(s => (
+                      {searchSuggestions.map((s) => (
                         <button
                           key={s.id}
                           onClick={() => selectSuggestion(s)}
                           className="w-full text-left px-3 py-2 hover:bg-neutral-800 border-b border-neutral-800/50"
                         >
-                          <span className="font-bold text-white mr-2">{s.id}</span>
-                          <span className="text-neutral-400">{s.name}</span>
+                          <span className="font-bold text-white mr-2">
+                            {s.id}
+                          </span>
+                          <span className="text-neutral-400">
+                            {s.name}
+                          </span>
                         </button>
                       ))}
                     </div>
@@ -1643,7 +2192,9 @@ export default function App() {
                   <StockCard
                     key={stock.id}
                     stock={stock}
-                    isSelected={selectedStock?.id === stock.id}
+                    isSelected={
+                      selectedStock?.id === stock.id
+                    }
                     onClick={(s) => {
                       setSelectedStock(s);
                       setActiveTab('analysis');
@@ -1671,21 +2222,26 @@ export default function App() {
             </div>
           )}
 
+          {/* Analysis */}
           {activeTab === 'analysis' && selectedStock && (
             <div className="max-w-7xl mx-auto pb-10">
-              {/* Backtest Summary */}
+              {/* 回測卡片 */}
               <div className="bg-neutral-900/80 backdrop-blur border border-neutral-800 p-6 rounded-3xl mb-6 shadow-2xl relative overflow-hidden group">
                 <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-amber-500 via-orange-500 to-red-500" />
                 {loadingFullHistory && (
                   <div className="absolute inset-0 bg-neutral-950/80 backdrop-blur-sm flex items-center justify-center z-10">
                     <div className="flex flex-col items-center">
-                      <Loader2 className="animate-spin mb-3 text-amber-500" size={32} />
+                      <Loader2
+                        className="animate-spin mb-3 text-amber-500"
+                        size={32}
+                      />
                       <span className="text-sm text-neutral-300 font-medium">
                         正在連線 FinMind 抓取 5 年歷史 K 線...
                       </span>
                     </div>
                   </div>
                 )}
+
                 <div className="flex flex-col md:flex-row md:items-center justify-between mb-6 gap-4">
                   <div className="flex items-center gap-4">
                     <div className="p-3 bg-amber-500/10 rounded-2xl text-amber-500 border border-amber-500/20">
@@ -1693,7 +2249,10 @@ export default function App() {
                     </div>
                     <div>
                       <h3 className="font-bold text-white text-xl tracking-tight">
-                        {selectedStock.isFullHistory ? '近五年' : '近半年'}策略回測報告
+                        {selectedStock.isFullHistory
+                          ? '近五年'
+                          : '近半年'}
+                        策略回測報告
                       </h3>
                       <p className="text-sm text-neutral-500 mt-1 font-medium">
                         策略模式:{' '}
@@ -1726,6 +2285,7 @@ export default function App() {
                     </span>
                   </div>
                 </div>
+
                 <div className="grid grid-cols-3 gap-6">
                   <div className="bg-neutral-950/50 p-5 rounded-2xl border border-neutral-800/50 flex flex-col justify-center">
                     <div className="text-xs text-neutral-500 mb-1 font-bold uppercase tracking-wider">
@@ -1733,10 +2293,14 @@ export default function App() {
                     </div>
                     <div
                       className={`text-3xl font-bold tracking-tight ${
-                        Number(currentBacktest.roi) >= 0 ? 'text-red-500' : 'text-emerald-500'
+                        Number(currentBacktest.roi) >= 0
+                          ? 'text-red-500'
+                          : 'text-emerald-500'
                       }`}
                     >
-                      {Number(currentBacktest.roi) > 0 ? '+' : ''}
+                      {Number(currentBacktest.roi) > 0
+                        ? '+'
+                        : ''}
                       {currentBacktest.roi}%
                     </div>
                   </div>
@@ -1754,25 +2318,34 @@ export default function App() {
                     </div>
                     <div className="text-3xl font-bold text-white tracking-tight">
                       {currentBacktest.count}{' '}
-                      <span className="text-lg text-neutral-600 font-medium">次</span>
+                      <span className="text-lg text-neutral-600 font-medium">
+                        次
+                      </span>
                     </div>
                   </div>
                 </div>
               </div>
 
-              {/* Charts & Side Info */}
+              {/* K 線 & 技術圖 */}
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                 <div className="lg:col-span-2 space-y-6">
-                  {/* K Chart */}
+                  {/* K 線 */}
                   <div className="bg-neutral-900 p-6 rounded-3xl border border-neutral-800 shadow-xl relative overflow-hidden">
                     {loadingFullHistory && (
                       <div className="absolute inset-0 bg-neutral-950/60 backdrop-blur-sm flex items-center justify-center z-10">
-                        <Loader2 className="animate-spin text-amber-500" size={32} />
+                        <Loader2
+                          className="animate-spin text-amber-500"
+                          size={32}
+                        />
                       </div>
                     )}
                     <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-6 gap-3">
                       <h3 className="font-bold text-white flex items-center gap-3 text-lg">
-                        <TrendingUp size={22} className="text-amber-500" /> 股價趨勢{' '}
+                        <TrendingUp
+                          size={22}
+                          className="text-amber-500"
+                        />{' '}
+                        股價趨勢{' '}
                         <span className="text-sm font-normal text-neutral-500">
                           (K線 + 均線)
                         </span>
@@ -1783,7 +2356,9 @@ export default function App() {
                             type="checkbox"
                             id="showBB"
                             checked={showBB}
-                            onChange={(e) => setShowBB(e.target.checked)}
+                            onChange={(e) =>
+                              setShowBB(e.target.checked)
+                            }
                             className="w-4 h-4 rounded border-neutral-600 bg-neutral-800 text-amber-600 focus:ring-amber-500 focus:ring-offset-0 cursor-pointer"
                           />
                           <label
@@ -1802,7 +2377,9 @@ export default function App() {
                           ].map((t) => (
                             <button
                               key={t.key}
-                              onClick={() => setTimeframe(t.key)}
+                              onClick={() =>
+                                setTimeframe(t.key)
+                              }
                               className={`px-2.5 py-1 rounded-lg font-semibold ${
                                 timeframe === t.key
                                   ? 'bg-amber-500/20 text-amber-400 border border-amber-500/40'
@@ -1815,11 +2392,20 @@ export default function App() {
                         </div>
                       </div>
                     </div>
+
                     <div className="h-[400px] w-full">
-                      <ResponsiveContainer width="100%" height="100%">
+                      <ResponsiveContainer
+                        width="100%"
+                        height="100%"
+                      >
                         <ComposedChart
                           data={displayChartData}
-                          margin={{ top: 10, right: 10, left: 0, bottom: 0 }}
+                          margin={{
+                            top: 10,
+                            right: 10,
+                            left: 0,
+                            bottom: 0,
+                          }}
                         >
                           <CartesianGrid
                             strokeDasharray="3 3"
@@ -1828,8 +2414,14 @@ export default function App() {
                           />
                           <XAxis
                             dataKey="day"
-                            tick={{ fontSize: 11, fill: '#737373' }}
-                            interval={Math.floor((displayChartData.length || 1) / 8)}
+                            tick={{
+                              fontSize: 11,
+                              fill: '#737373',
+                            }}
+                            interval={Math.floor(
+                              (displayChartData.length ||
+                                1) / 8,
+                            )}
                             axisLine={{ stroke: '#404040' }}
                             tickLine={false}
                             dy={10}
@@ -1837,7 +2429,10 @@ export default function App() {
                           <YAxis
                             domain={['auto', 'auto']}
                             orientation="right"
-                            tick={{ fontSize: 12, fill: '#737373' }}
+                            tick={{
+                              fontSize: 12,
+                              fill: '#737373',
+                            }}
                             axisLine={false}
                             tickLine={false}
                             dx={-5}
@@ -1850,15 +2445,33 @@ export default function App() {
                               strokeDasharray: '4 4',
                             }}
                           />
-                          <Bar dataKey="candleWick" barSize={1} xAxisId={0}>
-                            {displayChartData.map((entry, index) => (
-                              <Cell key={`wick-${index}`} fill={entry.color} />
-                            ))}
+                          <Bar
+                            dataKey="candleWick"
+                            barSize={1}
+                            xAxisId={0}
+                          >
+                            {displayChartData.map(
+                              (entry, index) => (
+                                <Cell
+                                  key={`wick-${index}`}
+                                  fill={entry.color}
+                                />
+                              ),
+                            )}
                           </Bar>
-                          <Bar dataKey="candleBody" barSize={8} xAxisId={0}>
-                            {displayChartData.map((entry, index) => (
-                              <Cell key={`body-${index}`} fill={entry.color} />
-                            ))}
+                          <Bar
+                            dataKey="candleBody"
+                            barSize={8}
+                            xAxisId={0}
+                          >
+                            {displayChartData.map(
+                              (entry, index) => (
+                                <Cell
+                                  key={`body-${index}`}
+                                  fill={entry.color}
+                                />
+                              ),
+                            )}
                           </Bar>
                           <Line
                             type="monotone"
@@ -1876,8 +2489,16 @@ export default function App() {
                             dot={false}
                             name="MA20"
                           />
-                          <Scatter dataKey="buySignal" shape={<BuyMarker />} name="買進訊號" />
-                          <Scatter dataKey="sellSignal" shape={<SellMarker />} name="賣出訊號" />
+                          <Scatter
+                            dataKey="buySignal"
+                            shape={<BuyMarker />}
+                            name="買進訊號"
+                          />
+                          <Scatter
+                            dataKey="sellSignal"
+                            shape={<SellMarker />}
+                            name="賣出訊號"
+                          />
                           {showBB && (
                             <>
                               <Area
@@ -1919,7 +2540,7 @@ export default function App() {
                     </div>
                   </div>
 
-                  {/* Tech / Chips */}
+                  {/* 技術指標圖 */}
                   <div className="bg-neutral-900 p-6 rounded-3xl border border-neutral-800 shadow-xl relative overflow-hidden">
                     <div className="flex items-center justify-between mb-6 border-b border-neutral-800 pb-4">
                       <div className="flex gap-2 p-1 bg-neutral-950/50 rounded-xl border border-neutral-800">
@@ -1955,10 +2576,19 @@ export default function App() {
                         </button>
                       </div>
                     </div>
+
                     <div className="h-56">
-                      <ResponsiveContainer width="100%" height="100%">
+                      <ResponsiveContainer
+                        width="100%"
+                        height="100%"
+                      >
                         {techTab === 'chips' && (
-                          <BarChart data={displayChartData.filter((i) => i.foreign !== undefined)}>
+                          <BarChart
+                            data={displayChartData.filter(
+                              (i) =>
+                                i.foreign !== undefined,
+                            )}
+                          >
                             <CartesianGrid
                               strokeDasharray="3 3"
                               vertical={false}
@@ -1966,26 +2596,54 @@ export default function App() {
                             />
                             <XAxis
                               dataKey="day"
-                              tick={{ fontSize: 11, fill: '#737373' }}
+                              tick={{
+                                fontSize: 11,
+                                fill: '#737373',
+                              }}
                             />
-                            <YAxis tick={{ fontSize: 11, fill: '#737373' }} />
+                            <YAxis
+                              tick={{
+                                fontSize: 11,
+                                fill: '#737373',
+                              }}
+                            />
                             <Tooltip
                               contentStyle={{
                                 borderRadius: '8px',
                                 fontSize: '12px',
                                 backgroundColor: '#171717',
-                                border: '1px solid #404040',
+                                border:
+                                  '1px solid #404040',
                               }}
                             />
                             <Legend
-                              wrapperStyle={{ fontSize: '12px', paddingTop: '10px' }}
+                              wrapperStyle={{
+                                fontSize: '12px',
+                                paddingTop: '10px',
+                              }}
                               iconType="circle"
                             />
-                            <Bar dataKey="foreign" name="外資" fill="#f87171" stackId="a" />
-                            <Bar dataKey="trust" name="投信" fill="#60a5fa" stackId="a" />
-                            <Bar dataKey="dealer" name="自營" fill="#34d399" stackId="a" />
+                            <Bar
+                              dataKey="foreign"
+                              name="外資"
+                              fill="#f87171"
+                              stackId="a"
+                            />
+                            <Bar
+                              dataKey="trust"
+                              name="投信"
+                              fill="#60a5fa"
+                              stackId="a"
+                            />
+                            <Bar
+                              dataKey="dealer"
+                              name="自營"
+                              fill="#34d399"
+                              stackId="a"
+                            />
                           </BarChart>
                         )}
+
                         {techTab === 'kd' && (
                           <LineChart data={displayChartData}>
                             <CartesianGrid
@@ -1995,12 +2653,21 @@ export default function App() {
                             />
                             <XAxis
                               dataKey="day"
-                              tick={{ fontSize: 11, fill: '#737373' }}
-                              interval={Math.floor((displayChartData.length || 1) / 8)}
+                              tick={{
+                                fontSize: 11,
+                                fill: '#737373',
+                              }}
+                              interval={Math.floor(
+                                (displayChartData.length ||
+                                  1) / 8,
+                              )}
                             />
                             <YAxis
                               domain={[0, 100]}
-                              tick={{ fontSize: 11, fill: '#737373' }}
+                              tick={{
+                                fontSize: 11,
+                                fill: '#737373',
+                              }}
                               ticks={[20, 50, 80]}
                             />
                             <Tooltip
@@ -2008,7 +2675,8 @@ export default function App() {
                                 borderRadius: '8px',
                                 fontSize: '12px',
                                 backgroundColor: '#171717',
-                                border: '1px solid '#404040',
+                                border:
+                                  '1px solid #404040',
                               }}
                             />
                             <ReferenceLine
@@ -2023,7 +2691,12 @@ export default function App() {
                               strokeDasharray="3 3"
                               opacity={0.5}
                             />
-                            <Legend wrapperStyle={{ fontSize: '12px', paddingTop: '10px' }} />
+                            <Legend
+                              wrapperStyle={{
+                                fontSize: '12px',
+                                paddingTop: '10px',
+                              }}
+                            />
                             <Line
                               type="monotone"
                               dataKey="k"
@@ -2042,6 +2715,7 @@ export default function App() {
                             />
                           </LineChart>
                         )}
+
                         {techTab === 'macd' && (
                           <ComposedChart data={displayChartData}>
                             <CartesianGrid
@@ -2051,26 +2725,52 @@ export default function App() {
                             />
                             <XAxis
                               dataKey="day"
-                              tick={{ fontSize: 11, fill: '#737373' }}
-                              interval={Math.floor((displayChartData.length || 1) / 8)}
+                              tick={{
+                                fontSize: 11,
+                                fill: '#737373',
+                              }}
+                              interval={Math.floor(
+                                (displayChartData.length ||
+                                  1) / 8,
+                              )}
                             />
-                            <YAxis tick={{ fontSize: 11, fill: '#737373' }} />
+                            <YAxis
+                              tick={{
+                                fontSize: 11,
+                                fill: '#737373',
+                              }}
+                            />
                             <Tooltip
                               contentStyle={{
                                 borderRadius: '8px',
                                 fontSize: '12px',
                                 backgroundColor: '#171717',
-                                border: '1px solid #404040',
+                                border:
+                                  '1px solid #404040',
                               }}
                             />
-                            <Legend wrapperStyle={{ fontSize: '12px', paddingTop: '10px' }} />
-                            <Bar dataKey="osc" name="OSC" fill="#8884d8">
-                              {displayChartData.map((entry, index) => (
-                                <Cell
-                                  key={`cell-${index}`}
-                                  fill={entry.osc > 0 ? '#f87171' : '#34d399'}
-                                />
-                              ))}
+                            <Legend
+                              wrapperStyle={{
+                                fontSize: '12px',
+                                paddingTop: '10px',
+                              }}
+                            />
+                            <Bar
+                              dataKey="osc"
+                              name="OSC"
+                            >
+                              {displayChartData.map(
+                                (entry, index) => (
+                                  <Cell
+                                    key={`cell-${index}`}
+                                    fill={
+                                      entry.osc > 0
+                                        ? '#f87171'
+                                        : '#34d399'
+                                    }
+                                  />
+                                ),
+                              )}
                             </Bar>
                             <Line
                               type="monotone"
@@ -2095,65 +2795,98 @@ export default function App() {
                   </div>
                 </div>
 
-                {/* Right side info */}
+                {/* 右側評分 / 基本面 */}
                 <div className="space-y-6">
+                  {/* AI Score */}
                   <div className="bg-gradient-to-br from-neutral-900 to-neutral-900 p-6 rounded-3xl border border-neutral-800 shadow-xl relative overflow-hidden">
                     <div className="absolute top-0 right-0 w-32 h-32 bg-amber-500/10 rounded-full blur-3xl -mr-10 -mt-10" />
                     <h3 className="font-bold mb-4 flex items-center gap-3 text-white text-lg relative z-10">
-                      <Target size={22} className="text-amber-500" /> AI 綜合評分
+                      <Target
+                        size={22}
+                        className="text-amber-500"
+                      />{' '}
+                      AI 綜合評分
                     </h3>
                     <div className="flex items-baseline gap-2 mb-4 relative z-10">
                       <span className="text-6xl font-black text-amber-400 tracking-tighter">
                         {selectedStock.score}
                       </span>
-                      <span className="text-sm text-neutral-500 font-medium">/ 100 分</span>
+                      <span className="text-sm text-neutral-500 font-medium">
+                        / 100 分
+                      </span>
                     </div>
                     <div className="w-full bg-neutral-800 h-3 rounded-full mb-5 overflow-hidden relative z-10 shadow-inner">
                       <div
                         className="h-full bg-gradient-to-r from-red-500 via-orange-500 to-amber-400 shadow-[0_0_15px_rgba(251,191,36,0.4)] transition-all duration-1000"
-                        style={{ width: `${selectedStock.score}%` }}
+                        style={{
+                          width: `${selectedStock.score}%`,
+                        }}
                       />
                     </div>
                     <div className="grid grid-cols-2 gap-3 relative z-10">
                       <div className="bg-neutral-950/50 p-3 rounded-xl border border-neutral-800/50">
-                        <div className="text-[10px] text-neutral-500 mb-1">價值面</div>
+                        <div className="text-[10px] text-neutral-500 mb-1">
+                          價值面
+                        </div>
                         <div
                           className={`font-bold ${
-                            selectedStock.pe < 15 ? 'text-emerald-400' : 'text-neutral-300'
+                            selectedStock.pe < 15
+                              ? 'text-emerald-400'
+                              : 'text-neutral-300'
                           }`}
                         >
-                          {selectedStock.pe < 15 ? '低估' : '合理'}
+                          {selectedStock.pe < 15
+                            ? '低估'
+                            : '合理'}
                         </div>
                       </div>
                       <div className="bg-neutral-950/50 p-3 rounded-xl border border-neutral-800/50">
-                        <div className="text-[10px] text-neutral-500 mb-1">技術面</div>
+                        <div className="text-[10px] text-neutral-500 mb-1">
+                          技術面
+                        </div>
                         <div
                           className={`font-bold ${
-                            selectedStock.k > selectedStock.d ? 'text-red-400' : 'text-neutral-300'
+                            selectedStock.k >
+                            selectedStock.d
+                              ? 'text-red-400'
+                              : 'text-neutral-300'
                           }`}
                         >
-                          {selectedStock.k > selectedStock.d ? '偏多' : '整理'}
+                          {selectedStock.k >
+                          selectedStock.d
+                            ? '偏多'
+                            : '整理'}
                         </div>
                       </div>
                     </div>
                   </div>
 
+                  {/* 基本面 */}
                   <div className="bg-neutral-900 p-6 rounded-3xl border border-neutral-800 shadow-xl">
                     <h3 className="font-bold text-white mb-5 flex items-center gap-3 text-lg">
-                      <Info size={22} className="text-blue-400" /> 基本面概況
+                      <Info
+                        size={22}
+                        className="text-blue-400"
+                      />{' '}
+                      基本面概況
                     </h3>
                     <div className="space-y-5">
                       <div className="flex justify-between items-center text-sm border-b border-neutral-800 pb-3">
-                        <span className="text-neutral-500">產業類別</span>
+                        <span className="text-neutral-500">
+                          產業類別
+                        </span>
                         <span className="font-medium text-white bg-neutral-800 px-3 py-1 rounded-lg">
                           {selectedStock.sector}
                         </span>
                       </div>
                       <div className="flex justify-between items-center text-sm border-b border-neutral-800 pb-3">
-                        <span className="text-neutral-500">本益比 (PE)</span>
+                        <span className="text-neutral-500">
+                          本益比 (PE)
+                        </span>
                         <span
                           className={`font-bold ${
-                            selectedStock.pe > 0 && selectedStock.pe < 15
+                            selectedStock.pe > 0 &&
+                            selectedStock.pe < 15
                               ? 'text-emerald-400'
                               : 'text-neutral-200'
                           }`}
@@ -2162,17 +2895,24 @@ export default function App() {
                         </span>
                       </div>
                       <div className="flex justify-between items-center text-sm border-b border-neutral-800 pb-3">
-                        <span className="text-neutral-500">股價淨值比 (PB)</span>
-                        <span className="font-bold text-neutral-200">{selectedStock.pb}</span>
+                        <span className="text-neutral-500">
+                          股價淨值比 (PB)
+                        </span>
+                        <span className="font-bold text-neutral-200">
+                          {selectedStock.pb}
+                        </span>
                       </div>
 
                       <div className="pt-1 mt-1 bg-neutral-950/30 p-4 rounded-2xl border border-neutral-800/50">
                         <div className="text-xs text-fuchsia-400 font-bold mb-3 flex items-center gap-2">
-                          <Banknote size={16} /> 殖利率資訊 (TWSE)
+                          <Banknote size={16} /> 殖利率資訊
+                          (TWSE)
                         </div>
                         <div className="space-y-2">
                           <div className="flex justify-between items-center text-sm">
-                            <span className="text-neutral-400 font-bold">公告殖利率</span>
+                            <span className="text-neutral-400 font-bold">
+                              公告殖利率
+                            </span>
                             <span className="font-bold text-fuchsia-400 text-lg">
                               {selectedStock.yield}%
                             </span>
@@ -2181,7 +2921,9 @@ export default function App() {
                       </div>
 
                       <div className="flex justify-between items-center text-xs mt-2">
-                        <span className="text-neutral-500">資料來源</span>
+                        <span className="text-neutral-500">
+                          資料來源
+                        </span>
                         <span className="px-2 py-1 rounded-full border border-neutral-700 bg-neutral-800 text-[11px] text-neutral-300">
                           TWSE 證交所公開資訊
                         </span>
