@@ -325,14 +325,15 @@ const fetchWithFallback = async (url) => {
   throw new Error("Network Error: Unable to fetch data from any source. Please check connection.");
 };
 
-// 從 TWSE OpenAPI 抓取全市場資料 (增加 T86_ALL 籌碼資料)
+// 從 Vercel Serverless Function 抓全市場資料，避開瀏覽器的 CORS
 const fetchTWSEMarketData = async () => {
   try {
-    const [dataBWIBBU, dataDay, dataT86] = await Promise.all([
-      fetchWithFallback('https://openapi.twse.com.tw/v1/exchangeReport/BWIBBU_ALL'),
-      fetchWithFallback('https://openapi.twse.com.tw/v1/exchangeReport/STOCK_DAY_ALL'),
-      fetchWithFallback('https://openapi.twse.com.tw/v1/fund/T86_ALL')
-    ]);
+    const res = await fetch('/api/twse-market');
+    if (!res.ok) {
+      throw new Error('TWSE API response not ok');
+    }
+
+    const { dataBWIBBU, dataDay, dataT86 } = await res.json();
 
     const marketMap = {};
 
@@ -354,12 +355,12 @@ const fetchTWSEMarketData = async () => {
         trustNet: 0,
       };
       if (marketMap[item.Code].price !== 0 && item.OpeningPrice) {
-          const prev = marketMap[item.Code].price - marketMap[item.Code].change;
-          if (prev > 0) {
-             marketMap[item.Code].changePercent = Number(((marketMap[item.Code].change / prev) * 100).toFixed(2));
-          } else {
-             marketMap[item.Code].changePercent = 0;
-          }
+        const prev = marketMap[item.Code].price - marketMap[item.Code].change;
+        if (prev > 0) {
+          marketMap[item.Code].changePercent = Number(((marketMap[item.Code].change / prev) * 100).toFixed(2));
+        } else {
+          marketMap[item.Code].changePercent = 0;
+        }
       }
     });
 
@@ -375,21 +376,17 @@ const fetchTWSEMarketData = async () => {
     // 3. 三大法人籌碼 (注意：單位是股數，除以1000換成張)
     dataT86.forEach(item => {
       if (marketMap[item.Code]) {
-        // 外陸資買賣超股數
         const foreign = parseInt(item.ForeignInvestorsNetBuySell) || 0;
-        // 投信買賣超股數
         const trust = parseInt(item.InvestmentTrustNetBuySell) || 0;
-        
         marketMap[item.Code].foreignNet = Math.round(foreign / 1000);
         marketMap[item.Code].trustNet = Math.round(trust / 1000);
       }
     });
 
     return Object.values(marketMap).filter(s => s.id.length === 4);
-
   } catch (error) {
     console.error("TWSE API Error:", error);
-    throw new Error("連線證交所 API 失敗 (已嘗試多重 Proxy)，請檢查網路狀態。");
+    throw new Error("連線證交所 API 失敗 (Serverless Function)，請稍後再試。");
   }
 };
 
