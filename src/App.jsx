@@ -325,73 +325,43 @@ const fetchWithFallback = async (url) => {
   throw new Error("Network Error: Unable to fetch data from any source. Please check connection.");
 };
 
-// 從自家 Vercel API 抓取全市場資料（由 Serverless 幫忙 call TWSE，解決 CORS）
+// 從自己的 API 取得全市場資料（Vercel Serverless Function）
 const fetchTWSEMarketData = async () => {
+  const res = await fetch('/api/twse-market');
+
+  if (!res.ok) {
+    throw new Error('TWSE API route error');
+  }
+
+  // 這裡就直接拿到剛剛 API 已處理好的陣列
+  const data = await res.json();
+  return data;
+};
+
+const loadMarketData = async () => {
+  setLoading(true);
+  setErrorMsg('');
+  setProgress(10);
+
   try {
-    // 這裡就只打同網域的 /api/twse-market，不再直接打 TWSE
-    const res = await fetch('/api/twse-market');
-    if (!res.ok) {
-      throw new Error('Proxy API /api/twse-market failed');
-    }
+    const marketData = await fetchTWSEMarketData();
+    setMarketCache(marketData);
+    setProgress(100);
 
-    const { dataBWIBBU, dataDay, dataT86 } = await res.json();
+    const initialStocks = marketData.filter((s) =>
+      INITIAL_WATCH_LIST_IDS.includes(s.id),
+    );
 
-    const marketMap = {};
-
-    // 1. 價格與成交量
-    dataDay.forEach(item => {
-      marketMap[item.Code] = {
-        id: item.Code,
-        name: item.Name,
-        price: parseFloat(item.ClosingPrice) || 0,
-        change: parseFloat(item.Change) || 0,
-        volume: parseInt(item.TradeVolume) || 0,
-        open: parseFloat(item.OpeningPrice) || 0,
-        high: parseFloat(item.HighestPrice) || 0,
-        low: parseFloat(item.LowestPrice) || 0,
-        pe: 0,
-        yield: 0,
-        pb: 0,
-        foreignNet: 0,
-        trustNet: 0,
-      };
-      if (marketMap[item.Code].price !== 0 && item.OpeningPrice) {
-        const prev = marketMap[item.Code].price - marketMap[item.Code].change;
-        if (prev > 0) {
-          marketMap[item.Code].changePercent = Number(((marketMap[item.Code].change / prev) * 100).toFixed(2));
-        } else {
-          marketMap[item.Code].changePercent = 0;
-        }
-      }
-    });
-
-    // 2. 本益比、殖利率、PB
-    dataBWIBBU.forEach(item => {
-      if (marketMap[item.Code]) {
-        marketMap[item.Code].pe = parseFloat(item.PEratio) || 0;
-        marketMap[item.Code].yield = parseFloat(item.DividendYield) || 0;
-        marketMap[item.Code].pb = parseFloat(item.PBratio) || 0;
-      }
-    });
-
-    // 3. 三大法人籌碼 (注意：單位是股數，除以1000換成張)
-    dataT86.forEach(item => {
-      if (marketMap[item.Code]) {
-        const foreign = parseInt(item.ForeignInvestorsNetBuySell) || 0;
-        const trust = parseInt(item.InvestmentTrustNetBuySell) || 0;
-
-        marketMap[item.Code].foreignNet = Math.round(foreign / 1000);
-        marketMap[item.Code].trustNet = Math.round(trust / 1000);
-      }
-    });
-
-    return Object.values(marketMap).filter(s => s.id.length === 4);
-
-  } catch (error) {
-    console.error("TWSE API Error via /api/twse-market:", error);
-    throw new Error("連線證交所 API 失敗（Serverless Proxy），請稍後再試。");
+    setStocks(initialStocks.map((s) => processStockData(s)));
+    setSelectedStock(processStockData(initialStocks[0]));
+  } catch (e) {
+    console.error(e);
+    setErrorMsg('連線證交所 API 失敗，請檢查網路或是 CORS 設定。');
+  } finally {
+    setLoading(false);
   }
 };
+
 
 
 const fetchFinMind = async (dataset, stockId, startDate) => {
