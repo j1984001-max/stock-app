@@ -1,7 +1,7 @@
-// api/twse-market.js  （放在專案根目錄，不是 src 裡）
+// api/twse-market.js
 
 export default async function handler(req, res) {
-  // CORS headers（同網域通常不需要，但放著比較保險）
+  // CORS（同網域其實用不到，但留著沒關係）
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
@@ -12,13 +12,21 @@ export default async function handler(req, res) {
   }
 
   try {
-    // ----------- 同步向 TWSE 抓三種資料 -----------
+    // 1) 先把三個 TWSE API 都打一次
     const [bwibbuRes, dayRes, t86Res] = await Promise.all([
       fetch('https://openapi.twse.com.tw/v1/exchangeReport/BWIBBU_ALL'),
       fetch('https://openapi.twse.com.tw/v1/exchangeReport/STOCK_DAY_ALL'),
       fetch('https://openapi.twse.com.tw/v1/fund/T86_ALL'),
     ]);
 
+    // 如果有任何一個不是 200，直接丟錯
+    if (!bwibbuRes.ok || !dayRes.ok || !t86Res.ok) {
+      throw new Error(
+        `TWSE status: BWIBBU ${bwibbuRes.status}, DAY ${dayRes.status}, T86 ${t86Res.status}`
+      );
+    }
+
+    // 2) 轉成 JSON
     const [dataBWIBBU, dataDay, dataT86] = await Promise.all([
       bwibbuRes.json(),
       dayRes.json(),
@@ -27,70 +35,72 @@ export default async function handler(req, res) {
 
     const marketMap = {};
 
-    // ----------- (1) 今日價格、漲跌、成交量等 -----------
+    // 3) 價格與成交量
+    (dataDay || []).forEach((item) => {
+      // 有些欄位可能是空字串，用 parseFloat / parseInt 轉換
+      const price = parseFloat(item.ClosingPrice);
+      const change = parseFloat(item.Change);
+      const volume = parseInt(item.TradeVolume, 10);
 
-    dataDay.forEach((item) => {
       marketMap[item.Code] = {
         id: item.Code,
         name: item.Name,
-        price: parseFloat(item.ClosingPrice) || 0,
-        change: parseFloat(item.Change) || 0,
-        volume: parseInt(item.TradeVolume) || 0,
-
-        open: parseFloat(item.OpeningPrice) || 0,
-        high: parseFloat(item.HighestPrice) || 0,
-        low: parseFloat(item.LowestPrice) || 0,
-
+        price: isNaN(price) ? 0 : price,
+        change: isNaN(change) ? 0 : change,
+        volume: isNaN(volume) ? 0 : volume,
+        open: isNaN(parseFloat(item.OpeningPrice)) ? 0 : parseFloat(item.OpeningPrice),
+        high: isNaN(parseFloat(item.HighestPrice)) ? 0 : parseFloat(item.HighestPrice),
+        low: isNaN(parseFloat(item.LowestPrice)) ? 0 : parseFloat(item.LowestPrice),
         pe: 0,
         yield: 0,
         pb: 0,
-
         foreignNet: 0,
         trustNet: 0,
+        changePercent: 0,
       };
 
-      // 漲跌幅計算
-      const s = marketMap[item.Code];
-      if (s.price !== 0) {
-        const prev = s.price - s.change;
-        s.changePercent = prev > 0 ? Number(((s.change / prev) * 100).toFixed(2)) : 0;
-      } else {
-        s.changePercent = 0;
+      const prev = marketMap[item.Code].price - marketMap[item.Code].change;
+      if (prev > 0) {
+        marketMap[item.Code].changePercent = Number(
+          ((marketMap[item.Code].change / prev) * 100).toFixed(2)
+        );
       }
     });
 
-    // ----------- (2) 本益比 / 殖利率 / PB -----------
+    // 4) 本益比、殖利率、PB
+    (dataBWIBBU || []).forEach((item) => {
+      if (!marketMap[item.Code]) return;
 
-    dataBWIBBU.forEach((item) => {
-      if (marketMap[item.Code]) {
-        marketMap[item.Code].pe = parseFloat(item.PEratio) || 0;
-        marketMap[item.Code].yield = parseFloat(item.DividendYield) || 0;
-        marketMap[item.Code].pb = parseFloat(item.PBratio) || 0;
-      }
+      const pe = parseFloat(item.PEratio);
+      const yld = parseFloat(item.DividendYield);
+      const pb = parseFloat(item.PBratio);
+
+      marketMap[item.Code].pe = isNaN(pe) ? 0 : pe;
+      marketMap[item.Code].yield = isNaN(yld) ? 0 : yld;
+      marketMap[item.Code].pb = isNaN(pb) ? 0 : pb;
     });
 
-    // ----------- (3) 三大法人買賣超（股數→張數） -----------
+    // 5) 三大法人籌碼（股數 / 1000 變張數）
+    (dataT86 || []).forEach((item) => {
+      if (!marketMap[item.Code]) return;
 
-    dataT86.forEach((item) => {
-      if (marketMap[item.Code]) {
-        const foreign = parseInt(item.ForeignInvestorsNetBuySell) || 0;
-        const trust = parseInt(item.InvestmentTrustNetBuySell) || 0;
+      const foreign = parseInt(item.ForeignInvestorsNetBuySell, 10);
+      const trust = parseInt(item.InvestmentTrustNetBuySell, 10);
 
-        marketMap[item.Code].foreignNet = Math.round(foreign / 1000);
-        marketMap[item.Code].trustNet = Math.round(trust / 1000);
-      }
+      marketMap[item.Code].foreignNet = Math.round((isNaN(foreign) ? 0 : foreign) / 1000);
+      marketMap[item.Code].trustNet = Math.round((isNaN(trust) ? 0 : trust) / 1000);
     });
 
-    // ----------- 整理結果：只留 4 位數股票 -----------
-
-    const result = Object.values(marketMap).filter((s) => s.id.length === 4);
+    // 6) 只回傳四碼股票
+    const result = Object.values(marketMap).filter((s) => s.id && s.id.length === 4);
 
     res.status(200).json(result);
   } catch (err) {
     console.error('TWSE API error:', err);
+
     res.status(500).json({
       error: 'TWSE fetch failed',
-      message: err.message,
+      message: err.message || 'Unknown error',
     });
   }
 }
