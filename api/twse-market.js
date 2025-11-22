@@ -1,7 +1,7 @@
 // api/twse-market.js  （放在專案根目錄，不是 src 裡）
 
 export default async function handler(req, res) {
-  // CORS headers（其實同網域通常用不到，但加著比較保險）
+  // CORS headers（同網域通常不需要，但放著比較保險）
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
@@ -12,6 +12,7 @@ export default async function handler(req, res) {
   }
 
   try {
+    // ----------- 同步向 TWSE 抓三種資料 -----------
     const [bwibbuRes, dayRes, t86Res] = await Promise.all([
       fetch('https://openapi.twse.com.tw/v1/exchangeReport/BWIBBU_ALL'),
       fetch('https://openapi.twse.com.tw/v1/exchangeReport/STOCK_DAY_ALL'),
@@ -26,7 +27,8 @@ export default async function handler(req, res) {
 
     const marketMap = {};
 
-    // 1. 價格與成交量
+    // ----------- (1) 今日價格、漲跌、成交量等 -----------
+
     dataDay.forEach((item) => {
       marketMap[item.Code] = {
         id: item.Code,
@@ -34,30 +36,31 @@ export default async function handler(req, res) {
         price: parseFloat(item.ClosingPrice) || 0,
         change: parseFloat(item.Change) || 0,
         volume: parseInt(item.TradeVolume) || 0,
+
         open: parseFloat(item.OpeningPrice) || 0,
         high: parseFloat(item.HighestPrice) || 0,
         low: parseFloat(item.LowestPrice) || 0,
+
         pe: 0,
         yield: 0,
         pb: 0,
+
         foreignNet: 0,
         trustNet: 0,
       };
 
-      if (marketMap[item.Code].price !== 0 && item.OpeningPrice) {
-        const prev =
-          marketMap[item.Code].price - marketMap[item.Code].change;
-        if (prev > 0) {
-          marketMap[item.Code].changePercent = Number(
-            ((marketMap[item.Code].change / prev) * 100).toFixed(2),
-          );
-        } else {
-          marketMap[item.Code].changePercent = 0;
-        }
+      // 漲跌幅計算
+      const s = marketMap[item.Code];
+      if (s.price !== 0) {
+        const prev = s.price - s.change;
+        s.changePercent = prev > 0 ? Number(((s.change / prev) * 100).toFixed(2)) : 0;
+      } else {
+        s.changePercent = 0;
       }
     });
 
-    // 2. 本益比、殖利率、PB
+    // ----------- (2) 本益比 / 殖利率 / PB -----------
+
     dataBWIBBU.forEach((item) => {
       if (marketMap[item.Code]) {
         marketMap[item.Code].pe = parseFloat(item.PEratio) || 0;
@@ -66,7 +69,8 @@ export default async function handler(req, res) {
       }
     });
 
-    // 3. 三大法人籌碼（股數 /1000 變張數）
+    // ----------- (3) 三大法人買賣超（股數→張數） -----------
+
     dataT86.forEach((item) => {
       if (marketMap[item.Code]) {
         const foreign = parseInt(item.ForeignInvestorsNetBuySell) || 0;
@@ -77,15 +81,16 @@ export default async function handler(req, res) {
       }
     });
 
-    const result = Object.values(marketMap).filter(
-      (s) => s.id.length === 4,
-    );
+    // ----------- 整理結果：只留 4 位數股票 -----------
+
+    const result = Object.values(marketMap).filter((s) => s.id.length === 4);
 
     res.status(200).json(result);
   } catch (err) {
     console.error('TWSE API error:', err);
-    res
-      .status(500)
-      .json({ error: 'TWSE fetch failed', message: err.message });
+    res.status(500).json({
+      error: 'TWSE fetch failed',
+      message: err.message,
+    });
   }
 }
