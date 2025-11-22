@@ -1,7 +1,7 @@
 // api/twse-market.js
 
 export default async function handler(req, res) {
-  // CORS（同網域其實用不到，但留著沒關係）
+  // CORS（其實同網域通常用不到，但加著保險）
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
@@ -11,96 +11,112 @@ export default async function handler(req, res) {
     return;
   }
 
-  try {
-    // 1) 先把三個 TWSE API 都打一次
-    const [bwibbuRes, dayRes, t86Res] = await Promise.all([
-      fetch('https://openapi.twse.com.tw/v1/exchangeReport/BWIBBU_ALL'),
-      fetch('https://openapi.twse.com.tw/v1/exchangeReport/STOCK_DAY_ALL'),
-      fetch('https://openapi.twse.com.tw/v1/fund/T86_ALL'),
-    ]);
+  // 小工具：安全抓 JSON，如果是 HTML 或壞掉就回空陣列 / 丟錯
+  const fetchJsonSafe = async (url, { allowEmptyOnHtml = true } = {}) => {
+    const r = await fetch(url);
 
-    // 如果有任何一個不是 200，直接丟錯
-    if (!bwibbuRes.ok || !dayRes.ok || !t86Res.ok) {
-      throw new Error(
-        `TWSE status: BWIBBU ${bwibbuRes.status}, DAY ${dayRes.status}, T86 ${t86Res.status}`
-      );
+    const text = await r.text();
+
+    if (!r.ok) {
+      console.error('[TWSE] HTTP error', r.status, url, text.slice(0, 200));
+      throw new Error(`HTTP ${r.status} from ${url}`);
     }
 
-    // 2) 轉成 JSON
+    // 有些時候 TWSE 回的是 HTML 錯誤頁
+    const trimmed = text.trim();
+    if (trimmed.startsWith('<')) {
+      console.error('[TWSE] Got HTML instead of JSON from', url);
+      if (allowEmptyOnHtml) {
+        // 回空陣列讓前端至少可以動（少一部份資料而已）
+        return [];
+      }
+      throw new Error(`Invalid JSON (HTML) from ${url}`);
+    }
+
+    try {
+      return JSON.parse(text);
+    } catch (e) {
+      console.error('[TWSE] JSON parse error from', url, 'body snippet:', text.slice(0, 200));
+      if (allowEmptyOnHtml) return [];
+      throw new Error(`JSON parse failed from ${url}: ${e.message}`);
+    }
+  };
+
+  try {
+    // 1. 同步去拿三份資料
     const [dataBWIBBU, dataDay, dataT86] = await Promise.all([
-      bwibbuRes.json(),
-      dayRes.json(),
-      t86Res.json(),
+      // 本益比 / 殖利率 / PB
+      fetchJsonSafe('https://openapi.twse.com.tw/v1/exchangeReport/BWIBBU_ALL'),
+      // 全市場日成交
+      fetchJsonSafe('https://openapi.twse.com.tw/v1/exchangeReport/STOCK_DAY_ALL'),
+      // 三大法人
+      fetchJsonSafe('https://openapi.twse.com.tw/v1/fund/T86_ALL'),
     ]);
 
     const marketMap = {};
 
-    // 3) 價格與成交量
+    // 2. 價格與成交量
     (dataDay || []).forEach((item) => {
-      // 有些欄位可能是空字串，用 parseFloat / parseInt 轉換
-      const price = parseFloat(item.ClosingPrice);
-      const change = parseFloat(item.Change);
-      const volume = parseInt(item.TradeVolume, 10);
+      if (!item.Code) return;
 
       marketMap[item.Code] = {
         id: item.Code,
         name: item.Name,
-        price: isNaN(price) ? 0 : price,
-        change: isNaN(change) ? 0 : change,
-        volume: isNaN(volume) ? 0 : volume,
-        open: isNaN(parseFloat(item.OpeningPrice)) ? 0 : parseFloat(item.OpeningPrice),
-        high: isNaN(parseFloat(item.HighestPrice)) ? 0 : parseFloat(item.HighestPrice),
-        low: isNaN(parseFloat(item.LowestPrice)) ? 0 : parseFloat(item.LowestPrice),
+        price: parseFloat(item.ClosingPrice) || 0,
+        change: parseFloat(item.Change) || 0,
+        volume: parseInt(item.TradeVolume) || 0,
+        open: parseFloat(item.OpeningPrice) || 0,
+        high: parseFloat(item.HighestPrice) || 0,
+        low: parseFloat(item.LowestPrice) || 0,
         pe: 0,
         yield: 0,
         pb: 0,
         foreignNet: 0,
         trustNet: 0,
-        changePercent: 0,
       };
 
-      const prev = marketMap[item.Code].price - marketMap[item.Code].change;
-      if (prev > 0) {
-        marketMap[item.Code].changePercent = Number(
-          ((marketMap[item.Code].change / prev) * 100).toFixed(2)
-        );
+      if (marketMap[item.Code].price !== 0 && item.OpeningPrice) {
+        const prev = marketMap[item.Code].price - marketMap[item.Code].change;
+        if (prev > 0) {
+          marketMap[item.Code].changePercent = Number(
+            ((marketMap[item.Code].change / prev) * 100).toFixed(2),
+          );
+        } else {
+          marketMap[item.Code].changePercent = 0;
+        }
+      } else {
+        marketMap[item.Code].changePercent = 0;
       }
     });
 
-    // 4) 本益比、殖利率、PB
+    // 3. 本益比、殖利率、PB
     (dataBWIBBU || []).forEach((item) => {
-      if (!marketMap[item.Code]) return;
-
-      const pe = parseFloat(item.PEratio);
-      const yld = parseFloat(item.DividendYield);
-      const pb = parseFloat(item.PBratio);
-
-      marketMap[item.Code].pe = isNaN(pe) ? 0 : pe;
-      marketMap[item.Code].yield = isNaN(yld) ? 0 : yld;
-      marketMap[item.Code].pb = isNaN(pb) ? 0 : pb;
+      if (!item.Code || !marketMap[item.Code]) return;
+      marketMap[item.Code].pe = parseFloat(item.PEratio) || 0;
+      marketMap[item.Code].yield = parseFloat(item.DividendYield) || 0;
+      marketMap[item.Code].pb = parseFloat(item.PBratio) || 0;
     });
 
-    // 5) 三大法人籌碼（股數 / 1000 變張數）
+    // 4. 三大法人籌碼（股數 /1000 變張數）
     (dataT86 || []).forEach((item) => {
-      if (!marketMap[item.Code]) return;
+      if (!item.Code || !marketMap[item.Code]) return;
 
-      const foreign = parseInt(item.ForeignInvestorsNetBuySell, 10);
-      const trust = parseInt(item.InvestmentTrustNetBuySell, 10);
+      const foreign = parseInt(item.ForeignInvestorsNetBuySell) || 0;
+      const trust = parseInt(item.InvestmentTrustNetBuySell) || 0;
 
-      marketMap[item.Code].foreignNet = Math.round((isNaN(foreign) ? 0 : foreign) / 1000);
-      marketMap[item.Code].trustNet = Math.round((isNaN(trust) ? 0 : trust) / 1000);
+      marketMap[item.Code].foreignNet = Math.round(foreign / 1000);
+      marketMap[item.Code].trustNet = Math.round(trust / 1000);
     });
 
-    // 6) 只回傳四碼股票
+    // 只留四碼股票
     const result = Object.values(marketMap).filter((s) => s.id && s.id.length === 4);
 
     res.status(200).json(result);
   } catch (err) {
-    console.error('TWSE API error:', err);
-
+    console.error('TWSE API error in /api/twse-market:', err);
     res.status(500).json({
       error: 'TWSE fetch failed',
-      message: err.message || 'Unknown error',
+      message: err.message || String(err),
     });
   }
 }
