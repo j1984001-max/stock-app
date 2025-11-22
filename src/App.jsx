@@ -325,12 +325,13 @@ const fetchWithFallback = async (url) => {
   throw new Error("Network Error: Unable to fetch data from any source. Please check connection.");
 };
 
-// 從 Vercel Serverless Function 抓全市場資料，避開瀏覽器的 CORS
+// 從自家 Vercel API 抓取全市場資料（由 Serverless 幫忙 call TWSE，解決 CORS）
 const fetchTWSEMarketData = async () => {
   try {
+    // 這裡就只打同網域的 /api/twse-market，不再直接打 TWSE
     const res = await fetch('/api/twse-market');
     if (!res.ok) {
-      throw new Error('TWSE API response not ok');
+      throw new Error('Proxy API /api/twse-market failed');
     }
 
     const { dataBWIBBU, dataDay, dataT86 } = await res.json();
@@ -344,7 +345,7 @@ const fetchTWSEMarketData = async () => {
         name: item.Name,
         price: parseFloat(item.ClosingPrice) || 0,
         change: parseFloat(item.Change) || 0,
-        volume: parseInt(item.TradeVolume) || 0, // 股數
+        volume: parseInt(item.TradeVolume) || 0,
         open: parseFloat(item.OpeningPrice) || 0,
         high: parseFloat(item.HighestPrice) || 0,
         low: parseFloat(item.LowestPrice) || 0,
@@ -378,17 +379,20 @@ const fetchTWSEMarketData = async () => {
       if (marketMap[item.Code]) {
         const foreign = parseInt(item.ForeignInvestorsNetBuySell) || 0;
         const trust = parseInt(item.InvestmentTrustNetBuySell) || 0;
+
         marketMap[item.Code].foreignNet = Math.round(foreign / 1000);
         marketMap[item.Code].trustNet = Math.round(trust / 1000);
       }
     });
 
     return Object.values(marketMap).filter(s => s.id.length === 4);
+
   } catch (error) {
-    console.error("TWSE API Error:", error);
-    throw new Error("連線證交所 API 失敗 (Serverless Function)，請稍後再試。");
+    console.error("TWSE API Error via /api/twse-market:", error);
+    throw new Error("連線證交所 API 失敗（Serverless Proxy），請稍後再試。");
   }
 };
+
 
 const fetchFinMind = async (dataset, stockId, startDate) => {
   const today = new Date();
