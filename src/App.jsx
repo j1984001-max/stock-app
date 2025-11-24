@@ -366,7 +366,7 @@ const runBacktest = (history, strategyType) => {
 };
 
 // =========================
-// API & Data Fetching
+– API & Data Fetching
 // =========================
 
 const fetchWithFallback = async (url) => {
@@ -624,8 +624,33 @@ const fetchDetailedHistory = async (stock, marketCacheStock) => {
 };
 
 // =========================
-// UI 小元件
+// Hooks & 小元件
 // =========================
+
+// 手機直向 / 橫向偵測
+const useOrientation = () => {
+  const [orientation, setOrientation] = useState('portrait');
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const update = () => {
+      setOrientation(
+        window.innerWidth > window.innerHeight
+          ? 'landscape'
+          : 'portrait',
+      );
+    };
+    update();
+    window.addEventListener('resize', update);
+    window.addEventListener('orientationchange', update);
+    return () => {
+      window.removeEventListener('resize', update);
+      window.removeEventListener('orientationchange', update);
+    };
+  }, []);
+
+  return orientation;
+};
 
 const BuyMarker = ({ cx, cy }) => {
   if (!cx || !cy) return null;
@@ -1240,6 +1265,646 @@ const ScreenerModal = ({
   );
 };
 
+// 即時報價狀態元件
+const RealtimeStatus = ({
+  enabled,
+  onToggle,
+  lastUpdateTime,
+}) => (
+  <div className="flex items-center gap-2 text-[11px] text-neutral-400 bg-neutral-900/80 px-3 py-1.5 rounded-full border border-neutral-700">
+    <div
+      className={`w-2 h-2 rounded-full ${
+        enabled
+          ? 'bg-emerald-400 shadow-[0_0_6px_rgba(16,185,129,0.7)]'
+          : 'bg-neutral-600'
+      }`}
+    />
+    <span className="hidden sm:inline">
+      即時報價 {enabled ? '已開啟' : '已關閉'}
+    </span>
+    {lastUpdateTime && (
+      <span className="hidden sm:inline text-[10px] text-neutral-500">
+        更新 {lastUpdateTime}
+      </span>
+    )}
+    <button
+      onClick={onToggle}
+      className={`ml-1 w-9 h-5 rounded-full flex items-center px-0.5 transition-colors ${
+        enabled ? 'bg-emerald-500/80' : 'bg-neutral-700'
+      }`}
+    >
+      <div
+        className={`w-4 h-4 bg-white rounded-full shadow transform transition-transform ${
+          enabled ? 'translate-x-4' : 'translate-x-0'
+        }`}
+      />
+    </button>
+  </div>
+);
+
+// K 線卡片
+const KLineCard = ({
+  selectedStock,
+  displayChartData,
+  timeframe,
+  setTimeframe,
+  showBB,
+  setShowBB,
+  loadingFullHistory,
+}) => (
+  <div className="bg-neutral-900 p-6 rounded-3xl border border-neutral-800 shadow-xl relative overflow-hidden">
+    {loadingFullHistory && (
+      <div className="absolute inset-0 bg-neutral-950/60 backdrop-blur-sm flex items-center justify-center z-10">
+        <Loader2
+          className="animate-spin text-amber-500"
+          size={32}
+        />
+      </div>
+    )}
+    <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-6 gap-3">
+      <h3 className="font-bold text-white flex items-center gap-3 text-lg">
+        <TrendingUp
+          size={22}
+          className="text-amber-500"
+        />{' '}
+        股價趨勢{' '}
+        <span className="text-sm font-normal text-neutral-500">
+          (K線 + 均線)
+        </span>
+      </h3>
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="flex items-center gap-3 bg-neutral-950/50 px-4 py-2 rounded-xl border border-neutral-800">
+          <input
+            type="checkbox"
+            id="showBB"
+            checked={showBB}
+            onChange={(e) =>
+              setShowBB(e.target.checked)
+            }
+            className="w-4 h-4 rounded border-neutral-600 bg-neutral-800 text-amber-600 focus:ring-amber-500 focus:ring-offset-0 cursor-pointer"
+          />
+          <label
+            htmlFor="showBB"
+            className="text-xs font-medium text-neutral-300 cursor-pointer select-none"
+          >
+            顯示布林通道
+          </label>
+        </div>
+        <div className="flex items-center gap-1 bg-neutral-950/50 px-2 py-1 rounded-xl border border-neutral-800 text-[11px]">
+          {[
+            { key: '3m', label: '3M' },
+            { key: '6m', label: '6M' },
+            { key: '1y', label: '1Y' },
+            { key: '5y', label: '5Y' },
+          ].map((t) => (
+            <button
+              key={t.key}
+              onClick={() =>
+                setTimeframe(t.key)
+              }
+              className={`px-2.5 py-1 rounded-lg font-semibold ${
+                timeframe === t.key
+                  ? 'bg-amber-500/20 text-amber-400 border border-amber-500/40'
+                  : 'text-neutral-400 hover:text-neutral-200'
+              }`}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+      </div>
+    </div>
+
+    <div className="h-[360px] w-full md:h-[400px]">
+      <ResponsiveContainer width="100%" height="100%">
+        <ComposedChart
+          data={displayChartData}
+          margin={{
+            top: 10,
+            right: 10,
+            left: 0,
+            bottom: 0,
+          }}
+        >
+          <CartesianGrid
+            strokeDasharray="3 3"
+            vertical={false}
+            stroke="#262626"
+          />
+          <XAxis
+            dataKey="day"
+            tick={{
+              fontSize: 11,
+              fill: '#737373',
+            }}
+            interval={Math.floor(
+              (displayChartData.length || 1) / 8,
+            )}
+            axisLine={{ stroke: '#404040' }}
+            tickLine={false}
+            dy={10}
+          />
+          <YAxis
+            domain={['auto', 'auto']}
+            orientation="right"
+            tick={{
+              fontSize: 12,
+              fill: '#737373',
+            }}
+            axisLine={false}
+            tickLine={false}
+            dx={-5}
+          />
+          <Tooltip
+            content={<CustomKLineTooltip />}
+            cursor={{
+              stroke: '#525252',
+              strokeWidth: 1,
+              strokeDasharray: '4 4',
+            }}
+          />
+          <Bar
+            dataKey="candleWick"
+            barSize={1}
+            xAxisId={0}
+          >
+            {displayChartData.map(
+              (entry, index) => (
+                <Cell
+                  key={`wick-${index}`}
+                  fill={entry.color}
+                />
+              ),
+            )}
+          </Bar>
+          <Bar
+            dataKey="candleBody"
+            barSize={8}
+            xAxisId={0}
+          >
+            {displayChartData.map(
+              (entry, index) => (
+                <Cell
+                  key={`body-${index}`}
+                  fill={entry.color}
+                />
+              ),
+            )}
+          </Bar>
+          <Line
+            type="monotone"
+            dataKey="ma5"
+            stroke="#fbbf24"
+            strokeWidth={2}
+            dot={false}
+            name="MA5"
+          />
+          <Line
+            type="monotone"
+            dataKey="ma20"
+            stroke="#a855f7"
+            strokeWidth={2}
+            dot={false}
+            name="MA20"
+          />
+          <Scatter
+            dataKey="buySignal"
+            shape={<BuyMarker />}
+            name="買進訊號"
+          />
+          <Scatter
+            dataKey="sellSignal"
+            shape={<SellMarker />}
+            name="賣出訊號"
+          />
+          {showBB && (
+            <>
+              <Area
+                type="monotone"
+                dataKey="bbUpper"
+                stroke="none"
+                fill="#3b82f6"
+                fillOpacity={0.05}
+              />
+              <Area
+                type="monotone"
+                dataKey="bbLower"
+                stroke="none"
+                fill="#3b82f6"
+                fillOpacity={0.05}
+              />
+              <Line
+                type="monotone"
+                dataKey="bbUpper"
+                stroke="#3b82f6"
+                strokeWidth={1}
+                strokeDasharray="4 4"
+                dot={false}
+                name="布林上"
+              />
+              <Line
+                type="monotone"
+                dataKey="bbLower"
+                stroke="#3b82f6"
+                strokeWidth={1}
+                strokeDasharray="4 4"
+                dot={false}
+                name="布林下"
+              />
+            </>
+          )}
+        </ComposedChart>
+      </ResponsiveContainer>
+    </div>
+  </div>
+);
+
+// 技術指標卡片
+const TechIndicatorsCard = ({
+  displayChartData,
+  techTab,
+  setTechTab,
+}) => (
+  <div className="bg-neutral-900 p-6 rounded-3xl border border-neutral-800 shadow-xl relative overflow-hidden">
+    <div className="flex items-center justify-between mb-6 border-b border-neutral-800 pb-4">
+      <div className="flex gap-2 p-1 bg-neutral-950/50 rounded-xl border border-neutral-800">
+        <button
+          onClick={() => setTechTab('chips')}
+          className={`px-4 py-2 text-xs font-bold rounded-lg transition-all ${
+            techTab === 'chips'
+              ? 'bg-neutral-800 text-white shadow-sm'
+              : 'text-neutral-500 hover:text-neutral-300'
+          }`}
+        >
+          法人籌碼
+        </button>
+        <button
+          onClick={() => setTechTab('kd')}
+          className={`px-4 py-2 text-xs font-bold rounded-lg transition-all ${
+            techTab === 'kd'
+              ? 'bg-neutral-800 text-amber-500 shadow-sm'
+              : 'text-neutral-500 hover:text-neutral-300'
+          }`}
+        >
+          KD 指標
+        </button>
+        <button
+          onClick={() => setTechTab('macd')}
+          className={`px-4 py-2 text-xs font-bold rounded-lg transition-all ${
+            techTab === 'macd'
+              ? 'bg-neutral-800 text-purple-400 shadow-sm'
+              : 'text-neutral-500 hover:text-neutral-300'
+          }`}
+        >
+          MACD
+        </button>
+      </div>
+    </div>
+
+    <div className="h-56">
+      <ResponsiveContainer width="100%" height="100%">
+        {techTab === 'chips' && (
+          <BarChart
+            data={displayChartData.filter(
+              (i) => i.foreign !== undefined,
+            )}
+          >
+            <CartesianGrid
+              strokeDasharray="3 3"
+              vertical={false}
+              stroke="#262626"
+            />
+            <XAxis
+              dataKey="day"
+              tick={{
+                fontSize: 11,
+                fill: '#737373',
+              }}
+            />
+            <YAxis
+              tick={{
+                fontSize: 11,
+                fill: '#737373',
+              }}
+            />
+            <Tooltip
+              contentStyle={{
+                borderRadius: '8px',
+                fontSize: '12px',
+                backgroundColor: '#171717',
+                border: '1px solid #404040',
+              }}
+            />
+            <Legend
+              wrapperStyle={{
+                fontSize: '12px',
+                paddingTop: '10px',
+              }}
+              iconType="circle"
+            />
+            <Bar
+              dataKey="foreign"
+              name="外資"
+              fill="#f87171"
+              stackId="a"
+            />
+            <Bar
+              dataKey="trust"
+              name="投信"
+              fill="#60a5fa"
+              stackId="a"
+            />
+            <Bar
+              dataKey="dealer"
+              name="自營"
+              fill="#34d399"
+              stackId="a"
+            />
+          </BarChart>
+        )}
+
+        {techTab === 'kd' && (
+          <LineChart data={displayChartData}>
+            <CartesianGrid
+              strokeDasharray="3 3"
+              vertical={false}
+              stroke="#262626"
+            />
+            <XAxis
+              dataKey="day"
+              tick={{
+                fontSize: 11,
+                fill: '#737373',
+              }}
+              interval={Math.floor(
+                (displayChartData.length || 1) / 8,
+              )}
+            />
+            <YAxis
+              domain={[0, 100]}
+              tick={{
+                fontSize: 11,
+                fill: '#737373',
+              }}
+              ticks={[20, 50, 80]}
+            />
+            <Tooltip
+              contentStyle={{
+                borderRadius: '8px',
+                fontSize: '12px',
+                backgroundColor: '#171717',
+                border: '1px solid #404040',
+              }}
+            />
+            <ReferenceLine
+              y={80}
+              stroke="#ef4444"
+              strokeDasharray="3 3"
+              opacity={0.5}
+            />
+            <ReferenceLine
+              y={20}
+              stroke="#10b981"
+              strokeDasharray="3 3"
+              opacity={0.5}
+            />
+            <Legend
+              wrapperStyle={{
+                fontSize: '12px',
+                paddingTop: '10px',
+              }}
+            />
+            <Line
+              type="monotone"
+              dataKey="k"
+              stroke="#fbbf24"
+              strokeWidth={2}
+              dot={false}
+              name="K(9)"
+            />
+            <Line
+              type="monotone"
+              dataKey="d"
+              stroke="#a855f7"
+              strokeWidth={2}
+              dot={false}
+              name="D(9)"
+            />
+          </LineChart>
+        )}
+
+        {techTab === 'macd' && (
+          <ComposedChart data={displayChartData}>
+            <CartesianGrid
+              strokeDasharray="3 3"
+              vertical={false}
+              stroke="#262626"
+            />
+            <XAxis
+              dataKey="day"
+              tick={{
+                fontSize: 11,
+                fill: '#737373',
+              }}
+              interval={Math.floor(
+                (displayChartData.length || 1) / 8,
+              )}
+            />
+            <YAxis
+              tick={{
+                fontSize: 11,
+                fill: '#737373',
+              }}
+            />
+            <Tooltip
+              contentStyle={{
+                borderRadius: '8px',
+                fontSize: '12px',
+                backgroundColor: '#171717',
+                border: '1px solid #404040',
+              }}
+            />
+            <Legend
+              wrapperStyle={{
+                fontSize: '12px',
+                paddingTop: '10px',
+              }}
+            />
+            <Bar dataKey="osc" name="OSC">
+              {displayChartData.map(
+                (entry, index) => (
+                  <Cell
+                    key={`cell-${index}`}
+                    fill={
+                      entry.osc > 0
+                        ? '#f87171'
+                        : '#34d399'
+                    }
+                  />
+                ),
+              )}
+            </Bar>
+            <Line
+              type="monotone"
+              dataKey="dif"
+              stroke="#60a5fa"
+              strokeWidth={2}
+              dot={false}
+              name="DIF"
+            />
+            <Line
+              type="monotone"
+              dataKey="macd"
+              stroke="#fbbf24"
+              strokeWidth={2}
+              dot={false}
+              name="MACD"
+            />
+          </ComposedChart>
+        )}
+      </ResponsiveContainer>
+    </div>
+  </div>
+);
+
+// AI 評分卡
+const AIScoreCard = ({ selectedStock }) => (
+  <div className="bg-gradient-to-br from-neutral-900 to-neutral-900 p-6 rounded-3xl border border-neutral-800 shadow-xl relative overflow-hidden">
+    <div className="absolute top-0 right-0 w-32 h-32 bg-amber-500/10 rounded-full blur-3xl -mr-10 -mt-10" />
+    <h3 className="font-bold mb-4 flex items-center gap-3 text-white text-lg relative z-10">
+      <Target
+        size={22}
+        className="text-amber-500"
+      />{' '}
+      AI 綜合評分
+    </h3>
+    <div className="flex items-baseline gap-2 mb-4 relative z-10">
+      <span className="text-6xl font-black text-amber-400 tracking-tighter">
+        {selectedStock.score}
+      </span>
+      <span className="text-sm text-neutral-500 font-medium">
+        / 100 分
+      </span>
+    </div>
+    <div className="w-full bg-neutral-800 h-3 rounded-full mb-5 overflow-hidden relative z-10 shadow-inner">
+      <div
+        className="h-full bg-gradient-to-r from-red-500 via-orange-500 to-amber-400 shadow-[0_0_15px_rgba(251,191,36,0.4)] transition-all duration-1000"
+        style={{
+          width: `${selectedStock.score}%`,
+        }}
+      />
+    </div>
+    <div className="grid grid-cols-2 gap-3 relative z-10">
+      <div className="bg-neutral-950/50 p-3 rounded-xl border border-neutral-800/50">
+        <div className="text-[10px] text-neutral-500 mb-1">
+          價值面
+        </div>
+        <div
+          className={`font-bold ${
+            selectedStock.pe < 15
+              ? 'text-emerald-400'
+              : 'text-neutral-300'
+          }`}
+        >
+          {selectedStock.pe < 15
+            ? '低估'
+            : '合理'}
+        </div>
+      </div>
+      <div className="bg-neutral-950/50 p-3 rounded-xl border border-neutral-800/50">
+        <div className="text-[10px] text-neutral-500 mb-1">
+          技術面
+        </div>
+        <div
+          className={`font-bold ${
+            selectedStock.k >
+            selectedStock.d
+              ? 'text-red-400'
+              : 'text-neutral-300'
+          }`}
+        >
+          {selectedStock.k >
+          selectedStock.d
+            ? '偏多'
+            : '整理'}
+        </div>
+      </div>
+    </div>
+  </div>
+);
+
+// 基本面卡
+const FundamentalsCard = ({ selectedStock }) => (
+  <div className="bg-neutral-900 p-6 rounded-3xl border border-neutral-800 shadow-xl">
+    <h3 className="font-bold text-white mb-5 flex items-center gap-3 text-lg">
+      <Info
+        size={22}
+        className="text-blue-400"
+      />{' '}
+      基本面概況
+    </h3>
+    <div className="space-y-5">
+      <div className="flex justify-between items-center text-sm border-b border-neutral-800 pb-3">
+        <span className="text-neutral-500">
+          產業類別
+        </span>
+        <span className="font-medium text-white bg-neutral-800 px-3 py-1 rounded-lg">
+          {selectedStock.sector}
+        </span>
+      </div>
+      <div className="flex justify-between items-center text-sm border-b border-neutral-800 pb-3">
+        <span className="text-neutral-500">
+          本益比 (PE)
+        </span>
+        <span
+          className={`font-bold ${
+            selectedStock.pe > 0 &&
+            selectedStock.pe < 15
+              ? 'text-emerald-400'
+              : 'text-neutral-200'
+          }`}
+        >
+          {selectedStock.pe}
+        </span>
+      </div>
+      <div className="flex justify-between items-center text-sm border-b border-neutral-800 pb-3">
+        <span className="text-neutral-500">
+          股價淨值比 (PB)
+        </span>
+        <span className="font-bold text-neutral-200">
+          {selectedStock.pb}
+        </span>
+      </div>
+
+      <div className="pt-1 mt-1 bg-neutral-950/30 p-4 rounded-2xl border border-neutral-800/50">
+        <div className="text-xs text-fuchsia-400 font-bold mb-3 flex items-center gap-2">
+          <Banknote size={16} /> 殖利率資訊
+          (TWSE)
+        </div>
+        <div className="space-y-2">
+          <div className="flex justify-between items-center text-sm">
+            <span className="text-neutral-400 font-bold">
+              公告殖利率
+            </span>
+            <span className="font-bold text-fuchsia-400 text-lg">
+              {selectedStock.yield}%
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <div className="flex justify-between items-center text-xs mt-2">
+        <span className="text-neutral-500">
+          資料來源
+        </span>
+        <span className="px-2 py-1 rounded-full border border-neutral-700 bg-neutral-800 text-[11px] text-neutral-300">
+          TWSE 證交所公開資訊
+        </span>
+      </div>
+    </div>
+  </div>
+);
+
 // =========================
 // 主元件：吳媽媽台股神探 PRO
 // =========================
@@ -1290,6 +1955,28 @@ export default function App() {
 
   const [showScreenerModal, setShowScreenerModal] =
     useState(false);
+
+  // 即時報價
+  const [realtimeEnabled, setRealtimeEnabled] =
+    useState(true);
+  const [lastRealtimeUpdate, setLastRealtimeUpdate] =
+    useState(null);
+
+  const formattedRealtimeTime = useMemo(() => {
+    if (!lastRealtimeUpdate) return '';
+    try {
+      return lastRealtimeUpdate.toLocaleTimeString('zh-TW', {
+        hour12: false,
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+      });
+    } catch {
+      return '';
+    }
+  }, [lastRealtimeUpdate]);
+
+  const orientation = useOrientation();
 
   // 我的最愛（localStorage + 雲端）
   const [favorites, setFavorites] = useState(() => {
@@ -1441,6 +2128,43 @@ export default function App() {
   useEffect(() => {
     loadMarketData();
   }, []);
+
+  // 即時報價輪詢：每 30 秒更新一次 TWSE Snapshot
+  useEffect(() => {
+    if (loading || !realtimeEnabled) return;
+
+    const interval = setInterval(async () => {
+      try {
+        const freshMarket = await fetchTWSEMarketData();
+        setMarketCache(freshMarket);
+
+        // 更新目前已載入的 stocks（保留 history / FinMind 資料）
+        setStocks((prev) =>
+          prev.map((s) => {
+            const fresh = freshMarket.find(
+              (m) => m.id === s.id,
+            );
+            return fresh ? { ...s, ...fresh } : s;
+          }),
+        );
+
+        // 更新目前選中的股票 snapshot
+        setSelectedStock((prev) => {
+          if (!prev) return prev;
+          const fresh = freshMarket.find(
+            (m) => m.id === prev.id,
+          );
+          return fresh ? { ...prev, ...fresh } : prev;
+        });
+
+        setLastRealtimeUpdate(new Date());
+      } catch (e) {
+        console.error('Realtime update failed:', e);
+      }
+    }, 30000); // 30 秒
+
+    return () => clearInterval(interval);
+  }, [loading, realtimeEnabled]);
 
   // 策略按鈕
   const handleStrategyChange = (newStrategy) => {
@@ -2057,6 +2781,17 @@ export default function App() {
                     }
                   />
                 </button>
+
+                {/* Analysis 頁：右側放即時報價狀態 */}
+                <div className="ml-auto">
+                  <RealtimeStatus
+                    enabled={realtimeEnabled}
+                    onToggle={() =>
+                      setRealtimeEnabled((prev) => !prev)
+                    }
+                    lastUpdateTime={formattedRealtimeTime}
+                  />
+                </div>
               </div>
             ) : (
               <div className="flex items-center gap-3 min-w-0">
@@ -2082,48 +2817,58 @@ export default function App() {
               </div>
             )}
 
+            {/* Overview 頁：搜尋 + 即時報價 */}
             {activeTab !== 'analysis' && (
-              <div className="relative shrink-0 ml-auto hidden md:block w-72">
-                <div className="relative">
-                  <Search
-                    size={18}
-                    className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-500"
-                  />
-                  <input
-                    type="text"
-                    value={searchQuery}
-                    onChange={(e) =>
-                      setSearchQuery(e.target.value)
-                    }
-                    placeholder="輸入代碼或名稱 (如: 台積, 2330)..."
-                    className="w-full pl-10 pr-4 py-2 text-sm border border-neutral-800 rounded-xl bg-neutral-900 text-white focus:border-amber-500 focus:ring-1 focus:ring-amber-500 outline-none placeholder-neutral-600"
-                  />
-                </div>
-                {searchSuggestions.length > 0 && (
-                  <div className="absolute top-full left-0 w-full mt-2 bg-neutral-900 border border-neutral-800 rounded-xl shadow-2xl z-50 overflow-hidden">
-                    {searchSuggestions.map((s) => (
-                      <button
-                        key={s.id}
-                        onClick={() => selectSuggestion(s)}
-                        className="w-full text-left px-4 py-3 hover:bg-neutral-800 flex justify-between items-center group border-b border-neutral-800/50 last:border-0"
-                      >
-                        <div>
-                          <span className="font-bold text-white mr-2">
-                            {s.id}
-                          </span>
-                          <span className="text-neutral-400 group-hover:text-amber-400">
-                            {s.name}
-                          </span>
-                        </div>
-                        <div className="text-right">
-                          <div className="text-xs text-neutral-500">
-                            PE: {s.pe}
-                          </div>
-                        </div>
-                      </button>
-                    ))}
+              <div className="flex items-center gap-4 ml-auto">
+                <div className="relative shrink-0 hidden md:block w-72">
+                  <div className="relative">
+                    <Search
+                      size={18}
+                      className="absolute left-3 top-1/2 -translate-y-1/2 text-neutral-500"
+                    />
+                    <input
+                      type="text"
+                      value={searchQuery}
+                      onChange={(e) =>
+                        setSearchQuery(e.target.value)
+                      }
+                      placeholder="輸入代碼或名稱 (如: 台積, 2330)..."
+                      className="w-full pl-10 pr-4 py-2 text-sm border border-neutral-800 rounded-xl bg-neutral-900 text-white focus:border-amber-500 focus:ring-1 focus:ring-amber-500 outline-none placeholder-neutral-600"
+                    />
                   </div>
-                )}
+                  {searchSuggestions.length > 0 && (
+                    <div className="absolute top-full left-0 w-full mt-2 bg-neutral-900 border border-neutral-800 rounded-xl shadow-2xl z-50 overflow-hidden">
+                      {searchSuggestions.map((s) => (
+                        <button
+                          key={s.id}
+                          onClick={() => selectSuggestion(s)}
+                          className="w-full text-left px-4 py-3 hover:bg-neutral-800 flex justify-between items-center group border-b border-neutral-800/50 last:border-0"
+                        >
+                          <div>
+                            <span className="font-bold text-white mr-2">
+                              {s.id}
+                            </span>
+                            <span className="text-neutral-400 group-hover:text-amber-400">
+                              {s.name}
+                            </span>
+                          </div>
+                          <div className="text-right">
+                            <div className="text-xs text-neutral-500">
+                              PE: {s.pe}
+                            </div>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                <RealtimeStatus
+                  enabled={realtimeEnabled}
+                  onToggle={() =>
+                    setRealtimeEnabled((prev) => !prev)
+                  }
+                  lastUpdateTime={formattedRealtimeTime}
+                />
               </div>
             )}
           </div>
@@ -2326,611 +3071,93 @@ export default function App() {
                 </div>
               </div>
 
-              {/* K 線 & 技術圖 */}
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              {/* Desktop / Tablet Layout */}
+              <div className="hidden md:grid grid-cols-1 lg:grid-cols-3 gap-6">
                 <div className="lg:col-span-2 space-y-6">
-                  {/* K 線 */}
-                  <div className="bg-neutral-900 p-6 rounded-3xl border border-neutral-800 shadow-xl relative overflow-hidden">
-                    {loadingFullHistory && (
-                      <div className="absolute inset-0 bg-neutral-950/60 backdrop-blur-sm flex items-center justify-center z-10">
-                        <Loader2
-                          className="animate-spin text-amber-500"
-                          size={32}
-                        />
-                      </div>
-                    )}
-                    <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-6 gap-3">
-                      <h3 className="font-bold text-white flex items-center gap-3 text-lg">
-                        <TrendingUp
-                          size={22}
-                          className="text-amber-500"
-                        />{' '}
-                        股價趨勢{' '}
-                        <span className="text-sm font-normal text-neutral-500">
-                          (K線 + 均線)
-                        </span>
-                      </h3>
-                      <div className="flex flex-wrap items-center gap-3">
-                        <div className="flex items-center gap-3 bg-neutral-950/50 px-4 py-2 rounded-xl border border-neutral-800">
-                          <input
-                            type="checkbox"
-                            id="showBB"
-                            checked={showBB}
-                            onChange={(e) =>
-                              setShowBB(e.target.checked)
-                            }
-                            className="w-4 h-4 rounded border-neutral-600 bg-neutral-800 text-amber-600 focus:ring-amber-500 focus:ring-offset-0 cursor-pointer"
-                          />
-                          <label
-                            htmlFor="showBB"
-                            className="text-xs font-medium text-neutral-300 cursor-pointer select-none"
-                          >
-                            顯示布林通道
-                          </label>
-                        </div>
-                        <div className="flex items-center gap-1 bg-neutral-950/50 px-2 py-1 rounded-xl border border-neutral-800 text-[11px]">
-                          {[
-                            { key: '3m', label: '3M' },
-                            { key: '6m', label: '6M' },
-                            { key: '1y', label: '1Y' },
-                            { key: '5y', label: '5Y' },
-                          ].map((t) => (
-                            <button
-                              key={t.key}
-                              onClick={() =>
-                                setTimeframe(t.key)
-                              }
-                              className={`px-2.5 py-1 rounded-lg font-semibold ${
-                                timeframe === t.key
-                                  ? 'bg-amber-500/20 text-amber-400 border border-amber-500/40'
-                                  : 'text-neutral-400 hover:text-neutral-200'
-                              }`}
-                            >
-                              {t.label}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="h-[400px] w-full">
-                      <ResponsiveContainer
-                        width="100%"
-                        height="100%"
-                      >
-                        <ComposedChart
-                          data={displayChartData}
-                          margin={{
-                            top: 10,
-                            right: 10,
-                            left: 0,
-                            bottom: 0,
-                          }}
-                        >
-                          <CartesianGrid
-                            strokeDasharray="3 3"
-                            vertical={false}
-                            stroke="#262626"
-                          />
-                          <XAxis
-                            dataKey="day"
-                            tick={{
-                              fontSize: 11,
-                              fill: '#737373',
-                            }}
-                            interval={Math.floor(
-                              (displayChartData.length ||
-                                1) / 8,
-                            )}
-                            axisLine={{ stroke: '#404040' }}
-                            tickLine={false}
-                            dy={10}
-                          />
-                          <YAxis
-                            domain={['auto', 'auto']}
-                            orientation="right"
-                            tick={{
-                              fontSize: 12,
-                              fill: '#737373',
-                            }}
-                            axisLine={false}
-                            tickLine={false}
-                            dx={-5}
-                          />
-                          <Tooltip
-                            content={<CustomKLineTooltip />}
-                            cursor={{
-                              stroke: '#525252',
-                              strokeWidth: 1,
-                              strokeDasharray: '4 4',
-                            }}
-                          />
-                          <Bar
-                            dataKey="candleWick"
-                            barSize={1}
-                            xAxisId={0}
-                          >
-                            {displayChartData.map(
-                              (entry, index) => (
-                                <Cell
-                                  key={`wick-${index}`}
-                                  fill={entry.color}
-                                />
-                              ),
-                            )}
-                          </Bar>
-                          <Bar
-                            dataKey="candleBody"
-                            barSize={8}
-                            xAxisId={0}
-                          >
-                            {displayChartData.map(
-                              (entry, index) => (
-                                <Cell
-                                  key={`body-${index}`}
-                                  fill={entry.color}
-                                />
-                              ),
-                            )}
-                          </Bar>
-                          <Line
-                            type="monotone"
-                            dataKey="ma5"
-                            stroke="#fbbf24"
-                            strokeWidth={2}
-                            dot={false}
-                            name="MA5"
-                          />
-                          <Line
-                            type="monotone"
-                            dataKey="ma20"
-                            stroke="#a855f7"
-                            strokeWidth={2}
-                            dot={false}
-                            name="MA20"
-                          />
-                          <Scatter
-                            dataKey="buySignal"
-                            shape={<BuyMarker />}
-                            name="買進訊號"
-                          />
-                          <Scatter
-                            dataKey="sellSignal"
-                            shape={<SellMarker />}
-                            name="賣出訊號"
-                          />
-                          {showBB && (
-                            <>
-                              <Area
-                                type="monotone"
-                                dataKey="bbUpper"
-                                stroke="none"
-                                fill="#3b82f6"
-                                fillOpacity={0.05}
-                              />
-                              <Area
-                                type="monotone"
-                                dataKey="bbLower"
-                                stroke="none"
-                                fill="#3b82f6"
-                                fillOpacity={0.05}
-                              />
-                              <Line
-                                type="monotone"
-                                dataKey="bbUpper"
-                                stroke="#3b82f6"
-                                strokeWidth={1}
-                                strokeDasharray="4 4"
-                                dot={false}
-                                name="布林上"
-                              />
-                              <Line
-                                type="monotone"
-                                dataKey="bbLower"
-                                stroke="#3b82f6"
-                                strokeWidth={1}
-                                strokeDasharray="4 4"
-                                dot={false}
-                                name="布林下"
-                              />
-                            </>
-                          )}
-                        </ComposedChart>
-                      </ResponsiveContainer>
-                    </div>
-                  </div>
-
-                  {/* 技術指標圖 */}
-                  <div className="bg-neutral-900 p-6 rounded-3xl border border-neutral-800 shadow-xl relative overflow-hidden">
-                    <div className="flex items-center justify-between mb-6 border-b border-neutral-800 pb-4">
-                      <div className="flex gap-2 p-1 bg-neutral-950/50 rounded-xl border border-neutral-800">
-                        <button
-                          onClick={() => setTechTab('chips')}
-                          className={`px-4 py-2 text-xs font-bold rounded-lg transition-all ${
-                            techTab === 'chips'
-                              ? 'bg-neutral-800 text-white shadow-sm'
-                              : 'text-neutral-500 hover:text-neutral-300'
-                          }`}
-                        >
-                          法人籌碼
-                        </button>
-                        <button
-                          onClick={() => setTechTab('kd')}
-                          className={`px-4 py-2 text-xs font-bold rounded-lg transition-all ${
-                            techTab === 'kd'
-                              ? 'bg-neutral-800 text-amber-500 shadow-sm'
-                              : 'text-neutral-500 hover:text-neutral-300'
-                          }`}
-                        >
-                          KD 指標
-                        </button>
-                        <button
-                          onClick={() => setTechTab('macd')}
-                          className={`px-4 py-2 text-xs font-bold rounded-lg transition-all ${
-                            techTab === 'macd'
-                              ? 'bg-neutral-800 text-purple-400 shadow-sm'
-                              : 'text-neutral-500 hover:text-neutral-300'
-                          }`}
-                        >
-                          MACD
-                        </button>
-                      </div>
-                    </div>
-
-                    <div className="h-56">
-                      <ResponsiveContainer
-                        width="100%"
-                        height="100%"
-                      >
-                        {techTab === 'chips' && (
-                          <BarChart
-                            data={displayChartData.filter(
-                              (i) =>
-                                i.foreign !== undefined,
-                            )}
-                          >
-                            <CartesianGrid
-                              strokeDasharray="3 3"
-                              vertical={false}
-                              stroke="#262626"
-                            />
-                            <XAxis
-                              dataKey="day"
-                              tick={{
-                                fontSize: 11,
-                                fill: '#737373',
-                              }}
-                            />
-                            <YAxis
-                              tick={{
-                                fontSize: 11,
-                                fill: '#737373',
-                              }}
-                            />
-                            <Tooltip
-                              contentStyle={{
-                                borderRadius: '8px',
-                                fontSize: '12px',
-                                backgroundColor: '#171717',
-                                border:
-                                  '1px solid #404040',
-                              }}
-                            />
-                            <Legend
-                              wrapperStyle={{
-                                fontSize: '12px',
-                                paddingTop: '10px',
-                              }}
-                              iconType="circle"
-                            />
-                            <Bar
-                              dataKey="foreign"
-                              name="外資"
-                              fill="#f87171"
-                              stackId="a"
-                            />
-                            <Bar
-                              dataKey="trust"
-                              name="投信"
-                              fill="#60a5fa"
-                              stackId="a"
-                            />
-                            <Bar
-                              dataKey="dealer"
-                              name="自營"
-                              fill="#34d399"
-                              stackId="a"
-                            />
-                          </BarChart>
-                        )}
-
-                        {techTab === 'kd' && (
-                          <LineChart data={displayChartData}>
-                            <CartesianGrid
-                              strokeDasharray="3 3"
-                              vertical={false}
-                              stroke="#262626"
-                            />
-                            <XAxis
-                              dataKey="day"
-                              tick={{
-                                fontSize: 11,
-                                fill: '#737373',
-                              }}
-                              interval={Math.floor(
-                                (displayChartData.length ||
-                                  1) / 8,
-                              )}
-                            />
-                            <YAxis
-                              domain={[0, 100]}
-                              tick={{
-                                fontSize: 11,
-                                fill: '#737373',
-                              }}
-                              ticks={[20, 50, 80]}
-                            />
-                            <Tooltip
-                              contentStyle={{
-                                borderRadius: '8px',
-                                fontSize: '12px',
-                                backgroundColor: '#171717',
-                                border:
-                                  '1px solid #404040',
-                              }}
-                            />
-                            <ReferenceLine
-                              y={80}
-                              stroke="#ef4444"
-                              strokeDasharray="3 3"
-                              opacity={0.5}
-                            />
-                            <ReferenceLine
-                              y={20}
-                              stroke="#10b981"
-                              strokeDasharray="3 3"
-                              opacity={0.5}
-                            />
-                            <Legend
-                              wrapperStyle={{
-                                fontSize: '12px',
-                                paddingTop: '10px',
-                              }}
-                            />
-                            <Line
-                              type="monotone"
-                              dataKey="k"
-                              stroke="#fbbf24"
-                              strokeWidth={2}
-                              dot={false}
-                              name="K(9)"
-                            />
-                            <Line
-                              type="monotone"
-                              dataKey="d"
-                              stroke="#a855f7"
-                              strokeWidth={2}
-                              dot={false}
-                              name="D(9)"
-                            />
-                          </LineChart>
-                        )}
-
-                        {techTab === 'macd' && (
-                          <ComposedChart data={displayChartData}>
-                            <CartesianGrid
-                              strokeDasharray="3 3"
-                              vertical={false}
-                              stroke="#262626"
-                            />
-                            <XAxis
-                              dataKey="day"
-                              tick={{
-                                fontSize: 11,
-                                fill: '#737373',
-                              }}
-                              interval={Math.floor(
-                                (displayChartData.length ||
-                                  1) / 8,
-                              )}
-                            />
-                            <YAxis
-                              tick={{
-                                fontSize: 11,
-                                fill: '#737373',
-                              }}
-                            />
-                            <Tooltip
-                              contentStyle={{
-                                borderRadius: '8px',
-                                fontSize: '12px',
-                                backgroundColor: '#171717',
-                                border:
-                                  '1px solid #404040',
-                              }}
-                            />
-                            <Legend
-                              wrapperStyle={{
-                                fontSize: '12px',
-                                paddingTop: '10px',
-                              }}
-                            />
-                            <Bar
-                              dataKey="osc"
-                              name="OSC"
-                            >
-                              {displayChartData.map(
-                                (entry, index) => (
-                                  <Cell
-                                    key={`cell-${index}`}
-                                    fill={
-                                      entry.osc > 0
-                                        ? '#f87171'
-                                        : '#34d399'
-                                    }
-                                  />
-                                ),
-                              )}
-                            </Bar>
-                            <Line
-                              type="monotone"
-                              dataKey="dif"
-                              stroke="#60a5fa"
-                              strokeWidth={2}
-                              dot={false}
-                              name="DIF"
-                            />
-                            <Line
-                              type="monotone"
-                              dataKey="macd"
-                              stroke="#fbbf24"
-                              strokeWidth={2}
-                              dot={false}
-                              name="MACD"
-                            />
-                          </ComposedChart>
-                        )}
-                      </ResponsiveContainer>
-                    </div>
-                  </div>
+                  <KLineCard
+                    selectedStock={selectedStock}
+                    displayChartData={displayChartData}
+                    timeframe={timeframe}
+                    setTimeframe={setTimeframe}
+                    showBB={showBB}
+                    setShowBB={setShowBB}
+                    loadingFullHistory={
+                      loadingFullHistory
+                    }
+                  />
+                  <TechIndicatorsCard
+                    displayChartData={displayChartData}
+                    techTab={techTab}
+                    setTechTab={setTechTab}
+                  />
                 </div>
-
-                {/* 右側評分 / 基本面 */}
                 <div className="space-y-6">
-                  {/* AI Score */}
-                  <div className="bg-gradient-to-br from-neutral-900 to-neutral-900 p-6 rounded-3xl border border-neutral-800 shadow-xl relative overflow-hidden">
-                    <div className="absolute top-0 right-0 w-32 h-32 bg-amber-500/10 rounded-full blur-3xl -mr-10 -mt-10" />
-                    <h3 className="font-bold mb-4 flex items-center gap-3 text-white text-lg relative z-10">
-                      <Target
-                        size={22}
-                        className="text-amber-500"
-                      />{' '}
-                      AI 綜合評分
-                    </h3>
-                    <div className="flex items-baseline gap-2 mb-4 relative z-10">
-                      <span className="text-6xl font-black text-amber-400 tracking-tighter">
-                        {selectedStock.score}
-                      </span>
-                      <span className="text-sm text-neutral-500 font-medium">
-                        / 100 分
-                      </span>
-                    </div>
-                    <div className="w-full bg-neutral-800 h-3 rounded-full mb-5 overflow-hidden relative z-10 shadow-inner">
-                      <div
-                        className="h-full bg-gradient-to-r from-red-500 via-orange-500 to-amber-400 shadow-[0_0_15px_rgba(251,191,36,0.4)] transition-all duration-1000"
-                        style={{
-                          width: `${selectedStock.score}%`,
-                        }}
-                      />
-                    </div>
-                    <div className="grid grid-cols-2 gap-3 relative z-10">
-                      <div className="bg-neutral-950/50 p-3 rounded-xl border border-neutral-800/50">
-                        <div className="text-[10px] text-neutral-500 mb-1">
-                          價值面
-                        </div>
-                        <div
-                          className={`font-bold ${
-                            selectedStock.pe < 15
-                              ? 'text-emerald-400'
-                              : 'text-neutral-300'
-                          }`}
-                        >
-                          {selectedStock.pe < 15
-                            ? '低估'
-                            : '合理'}
-                        </div>
-                      </div>
-                      <div className="bg-neutral-950/50 p-3 rounded-xl border border-neutral-800/50">
-                        <div className="text-[10px] text-neutral-500 mb-1">
-                          技術面
-                        </div>
-                        <div
-                          className={`font-bold ${
-                            selectedStock.k >
-                            selectedStock.d
-                              ? 'text-red-400'
-                              : 'text-neutral-300'
-                          }`}
-                        >
-                          {selectedStock.k >
-                          selectedStock.d
-                            ? '偏多'
-                            : '整理'}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* 基本面 */}
-                  <div className="bg-neutral-900 p-6 rounded-3xl border border-neutral-800 shadow-xl">
-                    <h3 className="font-bold text-white mb-5 flex items-center gap-3 text-lg">
-                      <Info
-                        size={22}
-                        className="text-blue-400"
-                      />{' '}
-                      基本面概況
-                    </h3>
-                    <div className="space-y-5">
-                      <div className="flex justify-between items-center text-sm border-b border-neutral-800 pb-3">
-                        <span className="text-neutral-500">
-                          產業類別
-                        </span>
-                        <span className="font-medium text-white bg-neutral-800 px-3 py-1 rounded-lg">
-                          {selectedStock.sector}
-                        </span>
-                      </div>
-                      <div className="flex justify-between items-center text-sm border-b border-neutral-800 pb-3">
-                        <span className="text-neutral-500">
-                          本益比 (PE)
-                        </span>
-                        <span
-                          className={`font-bold ${
-                            selectedStock.pe > 0 &&
-                            selectedStock.pe < 15
-                              ? 'text-emerald-400'
-                              : 'text-neutral-200'
-                          }`}
-                        >
-                          {selectedStock.pe}
-                        </span>
-                      </div>
-                      <div className="flex justify-between items-center text-sm border-b border-neutral-800 pb-3">
-                        <span className="text-neutral-500">
-                          股價淨值比 (PB)
-                        </span>
-                        <span className="font-bold text-neutral-200">
-                          {selectedStock.pb}
-                        </span>
-                      </div>
-
-                      <div className="pt-1 mt-1 bg-neutral-950/30 p-4 rounded-2xl border border-neutral-800/50">
-                        <div className="text-xs text-fuchsia-400 font-bold mb-3 flex items-center gap-2">
-                          <Banknote size={16} /> 殖利率資訊
-                          (TWSE)
-                        </div>
-                        <div className="space-y-2">
-                          <div className="flex justify-between items-center text-sm">
-                            <span className="text-neutral-400 font-bold">
-                              公告殖利率
-                            </span>
-                            <span className="font-bold text-fuchsia-400 text-lg">
-                              {selectedStock.yield}%
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="flex justify-between items-center text-xs mt-2">
-                        <span className="text-neutral-500">
-                          資料來源
-                        </span>
-                        <span className="px-2 py-1 rounded-full border border-neutral-700 bg-neutral-800 text-[11px] text-neutral-300">
-                          TWSE 證交所公開資訊
-                        </span>
-                      </div>
-                    </div>
-                  </div>
+                  <AIScoreCard
+                    selectedStock={selectedStock}
+                  />
+                  <FundamentalsCard
+                    selectedStock={selectedStock}
+                  />
                 </div>
+              </div>
+
+              {/* Mobile Layout：依直向 / 橫向調整順序 */}
+              <div className="md:hidden flex flex-col gap-6">
+                {orientation === 'portrait' ? (
+                  <>
+                    <AIScoreCard
+                      selectedStock={selectedStock}
+                    />
+                    <FundamentalsCard
+                      selectedStock={selectedStock}
+                    />
+                    <KLineCard
+                      selectedStock={selectedStock}
+                      displayChartData={displayChartData}
+                      timeframe={timeframe}
+                      setTimeframe={setTimeframe}
+                      showBB={showBB}
+                      setShowBB={setShowBB}
+                      loadingFullHistory={
+                        loadingFullHistory
+                      }
+                    />
+                    <TechIndicatorsCard
+                      displayChartData={
+                        displayChartData
+                      }
+                      techTab={techTab}
+                      setTechTab={setTechTab}
+                    />
+                  </>
+                ) : (
+                  <>
+                    <KLineCard
+                      selectedStock={selectedStock}
+                      displayChartData={displayChartData}
+                      timeframe={timeframe}
+                      setTimeframe={setTimeframe}
+                      showBB={showBB}
+                      setShowBB={setShowBB}
+                      loadingFullHistory={
+                        loadingFullHistory
+                      }
+                    />
+                    <TechIndicatorsCard
+                      displayChartData={
+                        displayChartData
+                      }
+                      techTab={techTab}
+                      setTechTab={setTechTab}
+                    />
+                    <AIScoreCard
+                      selectedStock={selectedStock}
+                    />
+                    <FundamentalsCard
+                      selectedStock={selectedStock}
+                    />
+                  </>
+                )}
               </div>
             </div>
           )}
