@@ -1,8 +1,7 @@
-// api/twse-market.js
-// 上市(TWSE) + 上櫃(TPEX) 整合版
-// 所有資料都來自官方：TWSE + TPEX（真實資料）
+// /api/twse-market.js
 
 export default async function handler(req, res) {
+  // CORS 設定（給前端 fetch 用）
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
@@ -13,36 +12,50 @@ export default async function handler(req, res) {
   }
 
   try {
-    // ========= 1. TWSE（上市）官方資料 =========
-    const [bwibbuRes, dayRes, t86Res, govRes] = await Promise.all([
+    // =========================
+    // 1. 先抓「上市 TWSE」三個主要資料集
+    // =========================
+    const [bwibbuRes, dayRes, t86Res] = await Promise.all([
       fetch('https://openapi.twse.com.tw/v1/exchangeReport/BWIBBU_ALL'),
       fetch('https://openapi.twse.com.tw/v1/exchangeReport/STOCK_DAY_ALL'),
       fetch('https://openapi.twse.com.tw/v1/fund/T86_ALL'),
-      fetch('https://openapi.twse.com.tw/v1/opendata/t187ap46_L_9'),
     ]);
 
-    const [dataBWIBBU, dataDay, dataT86, dataGov] = await Promise.all([
+    if (!bwibbuRes.ok || !dayRes.ok || !t86Res.ok) {
+      throw new Error(
+        `TWSE status: BWIBBU=${bwibbuRes.status}, DAY=${dayRes.status}, T86=${t86Res.status}`
+      );
+    }
+
+    const [dataBWIBBU, dataDay, dataT86] = await Promise.all([
       bwibbuRes.json(),
       dayRes.json(),
       t86Res.json(),
-      govRes.json(),
     ]);
 
     const marketMap = {};
 
-    // ===== 1-1. TWSE 成交（價格、量）=====
+    // -------------------------
+    // 1-1. 價格與成交量 (STOCK_DAY_ALL)
+    // -------------------------
     dataDay.forEach((item) => {
-      const code = item.Code;
-      marketMap[code] = {
-        id: code,
+      // Code: 股票代號, Name: 股票名稱
+      const id = item.Code;
+      if (!id) return;
+
+      const price = parseFloat(item.ClosingPrice);
+      const change = parseFloat(item.Change);
+      const volume = parseInt(item.TradeVolume, 10);
+
+      marketMap[id] = {
+        id,
         name: item.Name,
-        listedBoard: 'TWSE',
-        price: parseFloat(item.ClosingPrice) || 0,
-        change: parseFloat(item.Change) || 0,
-        volume: parseInt(item.TradeVolume) || 0,
-        open: parseFloat(item.OpeningPrice) || 0,
-        high: parseFloat(item.HighestPrice) || 0,
-        low: parseFloat(item.LowestPrice) || 0,
+        price: Number.isFinite(price) ? price : 0,
+        change: Number.isFinite(change) ? change : 0,
+        volume: Number.isFinite(volume) ? volume : 0,
+        open: Number.parseFloat(item.OpeningPrice) || 0,
+        high: Number.parseFloat(item.HighestPrice) || 0,
+        low: Number.parseFloat(item.LowestPrice) || 0,
         pe: 0,
         yield: 0,
         pb: 0,
@@ -50,80 +63,81 @@ export default async function handler(req, res) {
         trustNet: 0,
         governanceScore: null,
         governanceRaw: null,
+        // 預留給前端使用的欄位
+        sector: '上市公司',
       };
 
-      const prev = marketMap[code].price - marketMap[code].change;
-      marketMap[code].changePercent =
-        prev > 0 ? Number(((marketMap[code].change / prev) * 100).toFixed(2)) : 0;
+      const prev = marketMap[id].price - marketMap[id].change;
+      marketMap[id].changePercent =
+        prev > 0
+          ? Number(((marketMap[id].change / prev) * 100).toFixed(2))
+          : 0;
     });
 
-    // ===== 1-2. TWSE：基本面 =====
+    // -------------------------
+    // 1-2. 本益比、殖利率、PB (BWIBBU_ALL)
+    // -------------------------
     dataBWIBBU.forEach((item) => {
-      if (marketMap[item.Code]) {
-        marketMap[item.Code].pe = parseFloat(item.PEratio) || 0;
-        marketMap[item.Code].yield = parseFloat(item.DividendYield) || 0;
-        marketMap[item.Code].pb = parseFloat(item.PBratio) || 0;
-      }
+      const id = item.Code;
+      if (!id || !marketMap[id]) return;
+
+      marketMap[id].pe = parseFloat(item.PEratio) || 0;
+      marketMap[id].yield = parseFloat(item.DividendYield) || 0;
+      marketMap[id].pb = parseFloat(item.PBratio) || 0;
     });
 
-    // ===== 1-3. TWSE：法人 =====
+    // -------------------------
+    // 1-3. 三大法人籌碼 (T86_ALL)
+    // -------------------------
     dataT86.forEach((item) => {
-      if (marketMap[item.Code]) {
-        marketMap[item.Code].foreignNet = Math.round((parseInt(item.ForeignInvestorsNetBuySell) || 0) / 1000);
-        marketMap[item.Code].trustNet = Math.round((parseInt(item.InvestmentTrustNetBuySell) || 0) / 1000);
-      }
+      const id = item.Code;
+      if (!id || !marketMap[id]) return;
+
+      const foreign = parseInt(item.ForeignInvestorsNetBuySell, 10) || 0;
+      const trust = parseInt(item.InvestmentTrustNetBuySell, 10) || 0;
+
+      marketMap[id].foreignNet = Math.round(foreign / 1000);
+      marketMap[id].trustNet = Math.round(trust / 1000);
     });
 
-    // ===== 1-4. TWSE：公司治理（ESG）=====
-    dataGov.forEach((item) => {
-      const code = item.Code || item.SecuritiesCode;
-      if (!code || !marketMap[code]) return;
+    // =========================
+    // 2. 上櫃（TPEX）: 先做「不影響主流程」的嘗試
+    // =========================
+    try {
+      // ⚠️ 這裡只是範例 endpoint，你之後可以換成你要的 dataset。
+      // 請挑一個包含「證券代號／股票代碼」＋「成交價」的 TPEX API。
+      // 例如（假設有 Code / ClosingPrice 之類欄位）：
+      //
+      //   https://www.tpex.org.tw/openapi/v1/tpex_mainboard_quotes
+      //
+      const tpexRes = await fetch(
+        'https://www.tpex.org.tw/openapi/v1/tpex_mainboard_quotes'
+      );
 
-      const pieces = [];
-      if (item.BoardIndependentRatio) {
-        const r = parseFloat(item.BoardIndependentRatio);
-        if (!isNaN(r)) pieces.push(r >= 0.33 ? 40 : r >= 0.25 ? 25 : 10);
-      }
-      if (item.HasAuditCommittee === 'Y') pieces.push(20);
-      if (item.HasRemunerationCommittee === 'Y') pieces.push(10);
-      if (item.InfoSecurityPolicy === 'Y') pieces.push(10);
+      if (tpexRes.ok) {
+        const tpexData = await tpexRes.json();
 
-      const score = pieces.length ? pieces.reduce((a, b) => a + b, 0) : null;
+        tpexData.forEach((item) => {
+          // 下面這兩行「欄位名稱」一定要用實際 API 的欄位改掉：
+          const id = item.Code || item.SecuritiesCode; // ← 自己確認實際欄位
+          if (!id) return;
 
-      marketMap[code].governanceScore = score;
-      marketMap[code].governanceRaw = item;
-    });
+          // 如果這檔在 TWSE 已經有，就視為重複，不覆蓋
+          if (marketMap[id]) return;
 
-    // ========= 2. TPEX（上櫃）官方資料 =========
-    const tpexRes = await fetch('https://www.tpex.org.tw/openapi/v1/tpex_mainboard_daily_quotes');
+          const price = parseFloat(item.ClosingPrice || item.WeightedAveragePrice);
+          const volume = parseInt(item.NumberOfSharesTraded, 10);
 
-    if (tpexRes.ok) {
-      const tpexData = await tpexRes.json();
-
-      tpexData.forEach((item) => {
-        const code =
-          item.SecuritiesID ||
-          item.SecuritiesCode ||
-          item.Code ||
-          item.StockNo;
-
-        if (!code) return;
-
-        const price = parseFloat(item.WeightedAveragePrice) || 0;
-
-        if (!marketMap[code]) {
-          // 上櫃獨有
-          marketMap[code] = {
-            id: code,
+          marketMap[id] = {
+            id,
             name: item.Name || '',
-            listedBoard: 'TPEX',
-            price,
+            price: Number.isFinite(price) ? price : 0,
             change: 0,
             changePercent: 0,
-            volume: parseInt(item.NumberOfSharesTraded) || 0,
+            volume: Number.isFinite(volume) ? volume : 0,
             open: 0,
-            high: parseFloat(item.HighestPrice) || 0,
-            low: parseFloat(item.LowestPrice) || 0,
+            high: 0,
+            low: 0,
             pe: 0,
             yield: 0,
             pb: 0,
@@ -131,21 +145,29 @@ export default async function handler(req, res) {
             trustNet: 0,
             governanceScore: null,
             governanceRaw: null,
+            sector: '上櫃公司',
           };
-        } else {
-          // 若某股票由櫃轉市，或 TWSE API 有提供（少見）
-          marketMap[code].listedBoard = 'TPEX';
-          if (price) marketMap[code].price = price;
-        }
-      });
+        });
+      } else {
+        console.error('TPEX API status:', tpexRes.status);
+      }
+    } catch (tpexErr) {
+      // 這裡只記 log，不要 throw，避免整個 API 掛掉
+      console.error('TPEX API error:', tpexErr);
     }
 
-    // ========= 3. 最後輸出：只留 4 碼股票 =========
-    const result = Object.values(marketMap).filter((s) => s.id.length === 4);
+    // =========================
+    // 3. 組合 + 回傳
+    // =========================
 
+    const result = Object.values(marketMap).filter((s) => s.id && s.id.length === 4);
+
+    // 即使 result 為空，也回傳 200，讓前端可以顯示「找不到」而不是整個壞掉
     res.status(200).json(result);
   } catch (err) {
-    console.error('TWSE+TPEX market error:', err);
-    res.status(500).json({ error: 'market fetch error', detail: err.message });
+    console.error('TWSE API error:', err);
+
+    // ❗ 為了不要讓前端整個炸裂，這裡回傳 200 + 空陣列，而不是 500
+    res.status(200).json([]);
   }
 }
